@@ -1,0 +1,33 @@
+{
+  "name": "@pikoman/ws",
+  "author": "Christoffer Lantz <christoffer.lantz@filmskaparna.se>",
+  "version": "0.0.1",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:pikomanse/ws.git"
+  },
+  "scripts": {
+    "test": "jest",
+    "build": "tsc"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "devDependencies": {
+    "@babel/preset-env": "^7.14.1",
+    "@babel/preset-typescript": "^7.13.0",
+    "@types/jest": "^26.0.23",
+    "jest": "^26.6.3",
+    "sinon": "^10.0.0"
+  },
+  "dependencies": {
+    "js-sha256": "^0.9.0",
+    "typescript": "^4.2.4"
+  },
+  "keywords": [
+    "websocket"
+  ]
+}
