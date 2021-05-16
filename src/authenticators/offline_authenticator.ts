@@ -1,5 +1,5 @@
 import {sha256} from "js-sha256";
-import {Authenticator, Options} from "../types";
+import {Authenticator} from "../types";
 
 export function getHMAC(data: string, secret: string): string {
     return sha256.hmac(secret, `${data}`);
@@ -20,7 +20,7 @@ export default class OfflineAuthenticator implements Authenticator {
         this.secret = secret;
         this.permissions = permissions;
     }
-    async authenticate(channelName: string, _options: Options): Promise<string> {
+    async authenticate(channelName: string, _options = {}): Promise<string> {
         return '2:' + authChannelWithSecret(channelName, this.data, this.secret, this.permissions);
     }
 }

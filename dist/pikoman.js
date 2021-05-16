@@ -86,6 +86,7 @@ var Pikoman = /** @class */ (function () {
             ws.onopen = function () {
                 _this.ws = ws;
                 _this.bindWebSocket(ws);
+                _this.clearOfflineTimeout();
                 _this.rejoin();
             };
             ws.onerror = _this.reconnect.bind(_this);

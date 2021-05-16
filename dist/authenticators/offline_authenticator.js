@@ -57,6 +57,7 @@ var OfflineAuthenticator = /** @class */ (function () {
         this.permissions = permissions;
     }
     OfflineAuthenticator.prototype.authenticate = function (channelName, _options) {
+        if (_options === void 0) { _options = {}; }
         return __awaiter(this, void 0, void 0, function () {
             return __generator(this, function (_a) {
                 return [2 /*return*/, '2:' + authChannelWithSecret(channelName, this.data, this.secret, this.permissions)];
