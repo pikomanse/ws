@@ -69,6 +69,7 @@ export default class Pikoman {
             ws.onopen = () => {
                 this.ws = ws;
                 this.bindWebSocket(ws);
+                this.clearOfflineTimeout();
                 this.rejoin();
             };
             ws.onerror = this.reconnect.bind(this);
