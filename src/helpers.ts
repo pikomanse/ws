@@ -1,6 +1,12 @@
 export function splitn(str: string, splitAt: string, nrOfSplitAtBreakpoints: number) {
-    const splits = str.split(splitAt);
-    const splitted = splits.slice(0, nrOfSplitAtBreakpoints);
-    const rest = splits.slice(nrOfSplitAtBreakpoints).join(splitAt);
-    return [...splitted, rest];
+    let currentIndex = 0;
+    let strings = [];
+    while (nrOfSplitAtBreakpoints-- > 0) {
+        const nextIndex = str.indexOf(splitAt, currentIndex);
+        strings.push(str.substr(currentIndex, nextIndex - currentIndex));
+        currentIndex = nextIndex + 1;
+    }
+    strings.push(str.substr(currentIndex));
+
+    return strings;
 }
