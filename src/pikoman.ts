@@ -1,12 +1,16 @@
-import {Channel, PresenceChannel} from "./channel";
-import {splitn} from "./helpers";
-import {Authenticator, ConnectionStatus, Fn, MessageType, Options} from "./types";
-import {MessageHandler} from "./message_handler";
+import { Channel, PresenceChannel } from "./channel";
+import { splitn } from "./helpers";
+import { Authenticator, ConnectionStatus, Fn, MessageType, Options } from "./types";
+import { MessageHandler } from "./message_handler";
 import URLAuthenticator from "./authenticators/url_authenticator";
 
 const defaultOptions: Options = {
     ws_address: 'wss://ws.pikoman.se',
+    retry_timeout: 5e3,
+    ping_interval: 35e2,
+    go_offline_after: 1.85e4,
 };
+
 export default class Pikoman {
     private readonly appId: string;
     private clientId: number = -1;
@@ -73,11 +77,11 @@ export default class Pikoman {
                 this.rejoin();
             };
             ws.onerror = this.reconnect.bind(this);
-        }, 5000);
+        }, this.options.retry_timeout);
     }
     private onMessage({ data }: { data: string }) {
         switch (parseInt(data.substring(0, data.indexOf(':')), 10)) {
-            case 0: {
+            case MessageType.OP: {
                 const [_opcode, clientIdStr] = splitn(`${data}`, ':', 1);
                 const clientId = parseInt(clientIdStr, 10) || -1;
                 this.client(clientId);
@@ -154,8 +158,8 @@ export default class Pikoman {
     private clearOfflineTimeout() {
         clearTimeout(this.timeoutOffline);
         clearTimeout(this.timeoutSendPing);
-        this.timeoutOffline = setTimeout(this.onOffline, 18500);
-        this.timeoutSendPing = setTimeout(this.sendPing, 3500);
+        this.timeoutOffline = setTimeout(this.onOffline, this.options.go_offline_after);
+        this.timeoutSendPing = setTimeout(this.sendPing, this.options.ping_interval);
     }
 
     private sendPing() {

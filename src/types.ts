@@ -1,4 +1,5 @@
 export enum MessageType {
+    OP = 0,
     Join = 1,
     Subscribe = 2,
     Unsubscribe = 4,
@@ -23,6 +24,9 @@ export interface MessageCallback<T extends number> {
 export interface Options {
     ws_address: string;
     auth_url?: string;
+    retry_timeout?: number;
+    ping_interval?: number;
+    go_offline_after?: number;
 }
 export interface Authenticator {
     authenticate: (channelName: string, options: Options) => Promise<string>;
