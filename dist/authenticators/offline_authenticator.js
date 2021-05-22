@@ -42,10 +42,10 @@ function getHMAC(data, secret) {
     return js_sha256_1.sha256.hmac(secret, "" + data);
 }
 exports.getHMAC = getHMAC;
-function authChannelWithSecret(channelName, data, secret, permissions) {
+function authChannelWithSecret(clientId, channelName, data, secret, permissions) {
     if (permissions === void 0) { permissions = 0; }
     var strData = JSON.stringify(data);
-    var s = channelName + ":" + permissions + ":" + strData;
+    var s = clientId + ":" + channelName + ":" + permissions + ":" + strData;
     var hmac = getHMAC(s, secret);
     return channelName + ":" + hmac + ":" + permissions + ":" + strData;
 }
@@ -56,11 +56,11 @@ var OfflineAuthenticator = /** @class */ (function () {
         this.secret = secret;
         this.permissions = permissions;
     }
-    OfflineAuthenticator.prototype.authenticate = function (channelName, _options) {
+    OfflineAuthenticator.prototype.authenticate = function (clientId, channelName, _options) {
         if (_options === void 0) { _options = {}; }
         return __awaiter(this, void 0, void 0, function () {
             return __generator(this, function (_a) {
-                return [2 /*return*/, '2:' + authChannelWithSecret(channelName, this.data, this.secret, this.permissions)];
+                return [2 /*return*/, '2:' + authChannelWithSecret(clientId, channelName, this.data, this.secret, this.permissions)];
             });
         });
     };

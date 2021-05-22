@@ -44,7 +44,7 @@ export class PresenceChannel extends Channel {
         (async () => {
             try {
                 const authenticator = this.pikoman.getAuthenticator();
-                const response = await authenticator.authenticate(this.name, this.pikoman.getOptions());
+                const response = await authenticator.authenticate(this.pikoman.getClientId(), this.name, this.pikoman.getOptions());
                 this.pikoman.send(response);
             } catch (e) {
                 console.error(`Pikoman: ${e.message}`);

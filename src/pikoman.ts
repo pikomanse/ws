@@ -161,6 +161,9 @@ export default class Pikoman {
     private sendPing() {
         this.send(`64:${new Date().getTime()}`);
     }
+    getClientId(): number {
+        return this.clientId;
+    }
     state(fn: Fn) {
         this.messages.on(ConnectionStatus.Offline | ConnectionStatus.Loading | ConnectionStatus.Online, fn);
     }

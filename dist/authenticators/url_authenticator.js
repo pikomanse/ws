@@ -39,22 +39,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var URLAuthenticator = /** @class */ (function () {
     function URLAuthenticator() {
     }
-    URLAuthenticator.prototype.getAuthUrl = function (channelName, options) {
+    URLAuthenticator.prototype.getAuthUrl = function (clientId, channelName, options) {
         if (!channelName) {
             throw new Error("Need channelName");
         }
         if (!options.auth_url) {
             throw new Error("Need auth_url");
         }
-        return options.auth_url + "/" + channelName;
+        return options.auth_url + "/" + clientId + "-" + channelName;
     };
-    URLAuthenticator.prototype.authenticate = function (channelName, options) {
+    URLAuthenticator.prototype.authenticate = function (clientId, channelName, options) {
         return __awaiter(this, void 0, void 0, function () {
             var url, request, response;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
-                        url = this.getAuthUrl(channelName, options);
+                        url = this.getAuthUrl(clientId, channelName, options);
                         return [4 /*yield*/, fetch(url)];
                     case 1:
                         request = _a.sent();
