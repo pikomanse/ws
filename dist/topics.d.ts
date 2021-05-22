@@ -2,7 +2,7 @@ import { Fn } from "./types";
 export declare class Topics {
     private readonly topics;
     private readonly context;
-    constructor(context: any);
+    constructor(context?: any);
     /**
      * Bind a observer to a specific topic
      * @param {Topic} topic
@@ -36,3 +36,4 @@ export declare class Topics {
     clear(): void;
     dispatch(topic: string, ...data: any[]): void;
 }
+export default Topics;

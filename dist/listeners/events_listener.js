@@ -1,9 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-var topics_1 = require("../topics");
+var topics_1 = __importDefault(require("../topics"));
 var EventsListener = /** @class */ (function () {
     function EventsListener(context) {
-        this.topics = new topics_1.Topics(context);
+        this.topics = new topics_1.default(context);
     }
     EventsListener.prototype.dispatch = function (data) {
         if (data.length === 0) {

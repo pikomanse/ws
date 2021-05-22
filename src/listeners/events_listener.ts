@@ -1,4 +1,4 @@
-import {Topics} from "../topics";
+import Topics from "../topics";
 import {Fn, Listener} from "../types";
 
 export default class EventsListener implements Listener {

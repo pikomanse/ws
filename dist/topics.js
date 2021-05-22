@@ -84,3 +84,4 @@ var Topics = /** @class */ (function () {
     return Topics;
 }());
 exports.Topics = Topics;
+exports.default = Topics;

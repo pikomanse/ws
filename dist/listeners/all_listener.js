@@ -1,10 +1,13 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-var topics_1 = require("../topics");
+var topics_1 = __importDefault(require("../topics"));
 var AllListener = /** @class */ (function () {
     function AllListener(context) {
         this.topic = 'all';
-        this.topics = new topics_1.Topics(context);
+        this.topics = new topics_1.default(context);
     }
     AllListener.prototype.dispatch = function (data) {
         this.topics.dispatch(this.topic, data);
