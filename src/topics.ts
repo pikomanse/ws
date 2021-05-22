@@ -3,7 +3,7 @@ import {Fn} from "./types";
 export class Topics {
     private readonly topics = new Map<string, Fn[]>();
     private readonly context;
-    constructor(context: any) {
+    constructor(context?: any) {
         this.context = context;
     }
 
@@ -76,3 +76,5 @@ export class Topics {
         this.getObservers(topic).forEach(fn => fn.apply(this.context, data));
     }
 }
+
+export default Topics;
