@@ -1,8 +1,8 @@
 import {Channel, PresenceChannel} from "./channel";
 import {splitn} from "./helpers";
 import {Authenticator, ConnectionStatus, Fn, MessageType, Options} from "./types";
-import {MessageHandler} from "./message_handler";
 import URLAuthenticator from "./authenticators/url_authenticator";
+import {OpCodeHandler} from "./opcode_handler";
 
 const defaultOptions: Options = {
     ws_address: 'wss://ws.pikoman.se',
@@ -15,7 +15,7 @@ export default class Pikoman {
     private timeoutReconnect: any = 0;
     private status = ConnectionStatus.Loading;
     private channels = new Map<string, Channel>();
-    private messages = new MessageHandler<ConnectionStatus>(this);
+    private messages = new OpCodeHandler<ConnectionStatus>(this);
     private options: Options = defaultOptions;
     private ws: WebSocket;
     private authenticator: Authenticator = new URLAuthenticator();
@@ -77,19 +77,19 @@ export default class Pikoman {
     }
     private onMessage({ data }: { data: string }) {
         switch (parseInt(data.substring(0, data.indexOf(':')), 10)) {
-            case 0: {
+            case MessageType.Connection: {
                 const [_opcode, clientIdStr] = splitn(`${data}`, ':', 1);
                 const clientId = parseInt(clientIdStr, 10) || -1;
                 this.client(clientId);
                 break;
             }
-            case MessageType.Join: {
-                const [_opcode, channelName, ...rest] = splitn(`${data}`, ':', 2);
+            case MessageType.ServerMessage: {
+                const [_opcode, channelName, rest] = splitn(`${data}`, ':', 2);
                 const channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(MessageType.ServerMessage, rest);
+                channel.dispatch(rest);
                 break;
             }
             case MessageType.Subscribe: {
@@ -98,7 +98,7 @@ export default class Pikoman {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(MessageType.Subscribe, [MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
+                channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
                 break;
             }
             case MessageType.Unsubscribe: {
@@ -107,7 +107,7 @@ export default class Pikoman {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
+                channel.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
                 break;
             }
             case MessageType.ClientMessage: {
@@ -116,7 +116,7 @@ export default class Pikoman {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(MessageType.ClientMessage, rest);
+                channel.opcodes.dispatch(MessageType.ClientMessage, rest);
                 break;
             }
             case MessageType.Ping: {
@@ -129,7 +129,7 @@ export default class Pikoman {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(MessageType.Leave, rest);
+                channel.opcodes.dispatch(MessageType.Unknown, rest);
             }
         }
     }

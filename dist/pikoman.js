@@ -22,8 +22,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var channel_1 = require("./channel");
 var helpers_1 = require("./helpers");
 var types_1 = require("./types");
-var message_handler_1 = require("./message_handler");
 var url_authenticator_1 = __importDefault(require("./authenticators/url_authenticator"));
+var opcode_handler_1 = require("./opcode_handler");
 var defaultOptions = {
     ws_address: 'wss://ws.pikoman.se',
 };
@@ -36,7 +36,7 @@ var Pikoman = /** @class */ (function () {
         this.timeoutReconnect = 0;
         this.status = types_1.ConnectionStatus.Loading;
         this.channels = new Map();
-        this.messages = new message_handler_1.MessageHandler(this);
+        this.messages = new opcode_handler_1.OpCodeHandler(this);
         this.options = defaultOptions;
         this.authenticator = new url_authenticator_1.default();
         this.appId = appId;
@@ -95,19 +95,19 @@ var Pikoman = /** @class */ (function () {
     Pikoman.prototype.onMessage = function (_a) {
         var data = _a.data;
         switch (parseInt(data.substring(0, data.indexOf(':')), 10)) {
-            case 0: {
+            case types_1.MessageType.Connection: {
                 var _b = helpers_1.splitn("" + data, ':', 1), _opcode = _b[0], clientIdStr = _b[1];
                 var clientId = parseInt(clientIdStr, 10) || -1;
                 this.client(clientId);
                 break;
             }
-            case types_1.MessageType.Join: {
-                var _c = helpers_1.splitn("" + data, ':', 2), _opcode = _c[0], channelName = _c[1], rest = _c.slice(2);
+            case types_1.MessageType.ServerMessage: {
+                var _c = helpers_1.splitn("" + data, ':', 2), _opcode = _c[0], channelName = _c[1], rest = _c[2];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(types_1.MessageType.ServerMessage, rest);
+                channel.dispatch(rest);
                 break;
             }
             case types_1.MessageType.Subscribe: {
@@ -116,7 +116,7 @@ var Pikoman = /** @class */ (function () {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
+                channel.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
                 break;
             }
             case types_1.MessageType.Unsubscribe: {
@@ -125,7 +125,7 @@ var Pikoman = /** @class */ (function () {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
+                channel.opcodes.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
                 break;
             }
             case types_1.MessageType.ClientMessage: {
@@ -134,7 +134,7 @@ var Pikoman = /** @class */ (function () {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(types_1.MessageType.ClientMessage, rest);
+                channel.opcodes.dispatch(types_1.MessageType.ClientMessage, rest);
                 break;
             }
             case types_1.MessageType.Ping: {
@@ -147,7 +147,7 @@ var Pikoman = /** @class */ (function () {
                 if (!channel) {
                     return;
                 }
-                channel.messages.dispatch(types_1.MessageType.Leave, rest);
+                channel.opcodes.dispatch(types_1.MessageType.Unknown, rest);
             }
         }
     };

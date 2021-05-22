@@ -1,6 +1,6 @@
 import {Fn, MessageCallback} from "./types";
 
-export class MessageHandler<T extends number> {
+export class OpCodeHandler<T extends number> {
     private messages = Array<MessageCallback<T>>();
     private readonly context: any;
     constructor(context: any) {

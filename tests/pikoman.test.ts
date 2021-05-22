@@ -19,7 +19,7 @@ describe(`Pikoman`, () => {
         const channel = pikoman.listen(`test`);
         const spy = sinon.spy();
         channel.subscribe(spy);
-        channel.messages.dispatch(MessageType.Subscribe, expectedResult);
+        channel.opcodes.dispatch(MessageType.Subscribe, expectedResult);
         expect(spy.getCall(0).args).toEqual(expectedResult);
     });
     it(`Should call message fn`, () => {
@@ -28,7 +28,7 @@ describe(`Pikoman`, () => {
         const channel = pikoman.listen(`presence-test`);
         const spy = sinon.spy();
         channel.clientMessage(spy);
-        channel.messages.dispatch(MessageType.ClientMessage, expectedResult);
+        channel.opcodes.dispatch(MessageType.ClientMessage, expectedResult);
         expect(spy.getCall(0).args).toEqual(expectedResult);
     });
     it(`Should call clients fn upon join`, () => {
@@ -37,7 +37,7 @@ describe(`Pikoman`, () => {
         const channel = pikoman.listen(`presence-test`);
         const spy = sinon.spy();
         channel.clients(spy);
-        channel.messages.dispatch(MessageType.Subscribe, expectedResult);
+        channel.opcodes.dispatch(MessageType.Subscribe, expectedResult);
         expect(spy.getCall(0).args).toEqual(expectedResult);
     });
     it(`Should call clients fn upon leave`, () => {
@@ -46,7 +46,7 @@ describe(`Pikoman`, () => {
         const channel = pikoman.listen(`presence-test`);
         const spy = sinon.spy();
         channel.clients(spy);
-        channel.messages.dispatch(MessageType.Subscribe, expectedResult);
+        channel.opcodes.dispatch(MessageType.Subscribe, expectedResult);
         expect(spy.getCall(0).args).toEqual(expectedResult);
     });
 });

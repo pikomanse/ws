@@ -1,11 +1,11 @@
 export declare enum MessageType {
-    Join = 1,
+    Connection = 0,
+    ServerMessage = 1,
     Subscribe = 2,
     Unsubscribe = 4,
     ClientMessage = 8,
-    ServerMessage = 16,
-    Leave = 32,
-    Ping = 64
+    Ping = 64,
+    Unknown = 65
 }
 export declare enum ConnectionStatus {
     Offline = 1,
@@ -26,4 +26,9 @@ export interface Options {
 }
 export interface Authenticator {
     authenticate: (clientId: number, channelName: string, options: Options) => Promise<string>;
+}
+export interface Listener {
+    on(topic: string, fn: Fn): void;
+    dispatch(data: string): void;
+    clear(): void;
 }

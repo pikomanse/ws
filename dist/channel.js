@@ -53,21 +53,30 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PresenceChannel = exports.Channel = void 0;
 var types_1 = require("./types");
-var message_handler_1 = require("./message_handler");
+var opcode_handler_1 = require("./opcode_handler");
+var listeners_1 = require("./listeners");
 var Channel = /** @class */ (function () {
     function Channel(name, pikoman) {
-        this.messages = new message_handler_1.MessageHandler(this);
+        this.opcodes = new opcode_handler_1.OpCodeHandler(this);
+        this.listener = new listeners_1.AllListener(this);
         this.name = name;
         this.pikoman = pikoman;
     }
+    Channel.prototype.setListener = function (listener) {
+        this.listener = listener;
+    };
     Channel.prototype.join = function () {
         this.pikoman.send("2:" + this.name);
     };
     Channel.prototype.serverMessage = function (fn) {
-        this.messages.on(types_1.MessageType.ServerMessage, fn);
+        this.listener.on('all', fn);
+    };
+    Channel.prototype.dispatch = function (data) {
+        this.listener.dispatch(data);
     };
     Channel.prototype.clear = function () {
-        this.messages.clear();
+        this.opcodes.clear();
+        this.listener.clear();
     };
     return Channel;
 }());
@@ -102,19 +111,19 @@ var PresenceChannel = /** @class */ (function (_super) {
         }); })();
     };
     PresenceChannel.prototype.subscribe = function (fn) {
-        this.messages.on(types_1.MessageType.Subscribe, fn);
+        this.opcodes.on(types_1.MessageType.Subscribe, fn);
     };
     PresenceChannel.prototype.clients = function (fn) {
-        this.messages.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, fn);
+        this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, fn);
     };
     PresenceChannel.prototype.unsubscribe = function (fn) {
-        this.messages.on(types_1.MessageType.Unsubscribe, fn);
+        this.opcodes.on(types_1.MessageType.Unsubscribe, fn);
     };
     PresenceChannel.prototype.clientsCount = function (fn) {
-        this.messages.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, function (event, nrOfClients) { return fn(nrOfClients); });
+        this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, function (event, nrOfClients) { return fn(nrOfClients); });
     };
     PresenceChannel.prototype.clientMessage = function (fn) {
-        this.messages.on(types_1.MessageType.ClientMessage, fn);
+        this.opcodes.on(types_1.MessageType.ClientMessage, fn);
     };
     PresenceChannel.prototype.send = function (data) {
         this.pikoman.send("8:" + this.name + ":" + data);

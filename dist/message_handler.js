@@ -3,7 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MessageHandler = void 0;
 var MessageHandler = /** @class */ (function () {
     function MessageHandler(context) {
-        this.messages = Array();
+        this.opcodes = Array();
         this.context = context;
     }
     MessageHandler.prototype.filterCallbacksArray = function (array, type) {

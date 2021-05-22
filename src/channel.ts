@@ -1,23 +1,32 @@
-import {Fn, MessageType} from "./types";
-import {MessageHandler} from "./message_handler";
 import Pikoman from "./pikoman";
+import {Fn, Listener, MessageType} from "./types";
+import {OpCodeHandler} from "./opcode_handler";
+import { AllListener } from "./listeners";
 
 export class Channel {
     protected readonly name: string;
     protected readonly pikoman: Pikoman;
-    public messages = new MessageHandler<MessageType>(this);
+    public opcodes = new OpCodeHandler<MessageType>(this);
+    public listener: Listener = new AllListener(this);
     constructor(name: string, pikoman: Pikoman) {
         this.name = name;
         this.pikoman = pikoman;
+    }
+    setListener(listener: Listener) {
+        this.listener = listener;
     }
     join() {
         this.pikoman.send(`2:${this.name}`);
     }
     serverMessage(fn: Fn) {
-        this.messages.on(MessageType.ServerMessage, fn);
+        this.listener.on('all', fn);
+    }
+    dispatch(data: string) {
+        this.listener.dispatch(data);
     }
     clear() {
-        this.messages.clear();
+        this.opcodes.clear();
+        this.listener.clear();
     }
 }
 export class PresenceChannel extends Channel {
@@ -34,19 +43,19 @@ export class PresenceChannel extends Channel {
         })();
     }
     subscribe(fn: Fn) {
-        this.messages.on(MessageType.Subscribe, fn);
+        this.opcodes.on(MessageType.Subscribe, fn);
     }
     clients(fn: Fn) {
-        this.messages.on(MessageType.Subscribe | MessageType.Unsubscribe, fn);
+        this.opcodes.on(MessageType.Subscribe | MessageType.Unsubscribe, fn);
     }
     unsubscribe(fn: Fn) {
-        this.messages.on(MessageType.Unsubscribe, fn);
+        this.opcodes.on(MessageType.Unsubscribe, fn);
     }
     clientsCount(fn: Fn) {
-        this.messages.on(MessageType.Subscribe | MessageType.Unsubscribe, (event, nrOfClients) => fn(nrOfClients));
+        this.opcodes.on(MessageType.Subscribe | MessageType.Unsubscribe, (event, nrOfClients) => fn(nrOfClients));
     }
     clientMessage(fn: Fn) {
-        this.messages.on(MessageType.ClientMessage, fn);
+        this.opcodes.on(MessageType.ClientMessage, fn);
     }
     send(data: string) {
         this.pikoman.send(`8:${this.name}:${data}`);
