@@ -3,7 +3,7 @@ import {Fn, Listener} from "../types";
 
 export default class EventsListener implements Listener {
     private topics;
-    constructor(context: any) {
+    constructor(context?: any) {
         this.topics = new Topics(context);
     }
     dispatch(data: string): void {

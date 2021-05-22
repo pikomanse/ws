@@ -4,7 +4,7 @@ import {Fn, Listener} from "../types";
 export default class AllListener implements Listener {
     private topic = 'all';
     private topics;
-    constructor(context: any) {
+    constructor(context?: any) {
         this.topics = new Topics(context);
     }
     dispatch(data: string): void {
