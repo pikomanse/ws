@@ -36,7 +36,7 @@ export default class Pikoman {
     offline(fn: Fn): void;
     join(fn: Fn): void;
     subscribe(fn: Fn): void;
-    is_connected(): boolean;
+    isConnected(): boolean;
     listen(channelName: string): Channel;
     send(data: string): void;
     clear(): void;

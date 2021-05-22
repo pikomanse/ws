@@ -10,29 +10,11 @@ export class Channel {
         this.name = name;
         this.pikoman = pikoman;
     }
-    protected getAuthUrl() {
-        return `${this.pikoman.getAuthUrl()}/${this.name}`;
-    }
     join() {
         this.pikoman.send(`2:${this.name}`);
     }
-    subscribe(fn: Fn) {
-        this.messages.on(MessageType.Subscribe, fn);
-    }
-    clients(fn: Fn) {
-        this.messages.on(MessageType.Subscribe | MessageType.Unsubscribe, fn);
-    }
-    unsubscribe(fn: Fn) {
-        this.messages.on(MessageType.Unsubscribe, fn);
-    }
     serverMessage(fn: Fn) {
         this.messages.on(MessageType.ServerMessage, fn);
-    }
-    clientMessage(fn: Fn) {
-        this.messages.on(MessageType.ClientMessage, fn);
-    }
-    send(data: string) {
-        this.pikoman.send(`8:${this.name}:${data}`);
     }
     clear() {
         this.messages.clear();
@@ -50,5 +32,23 @@ export class PresenceChannel extends Channel {
                 console.error(`Pikoman: ${e.message}`);
             }
         })();
+    }
+    subscribe(fn: Fn) {
+        this.messages.on(MessageType.Subscribe, fn);
+    }
+    clients(fn: Fn) {
+        this.messages.on(MessageType.Subscribe | MessageType.Unsubscribe, fn);
+    }
+    unsubscribe(fn: Fn) {
+        this.messages.on(MessageType.Unsubscribe, fn);
+    }
+    clientsCount(fn: Fn) {
+        this.messages.on(MessageType.Subscribe | MessageType.Unsubscribe, (event, nrOfClients) => fn(nrOfClients));
+    }
+    clientMessage(fn: Fn) {
+        this.messages.on(MessageType.ClientMessage, fn);
+    }
+    send(data: string) {
+        this.pikoman.send(`8:${this.name}:${data}`);
     }
 }

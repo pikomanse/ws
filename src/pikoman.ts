@@ -171,7 +171,7 @@ export default class Pikoman {
     }
     connection(fn: Fn) {
         this.messages.on(ConnectionStatus.Offline | ConnectionStatus.Online, fn);
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             fn.call(this, [true]);
         }
     }
@@ -183,11 +183,11 @@ export default class Pikoman {
     }
     subscribe(fn: Fn) {
         this.messages.on(ConnectionStatus.Online, fn);
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             fn.call(this, this.clientId);
         }
     }
-    is_connected() {
+    isConnected() {
         return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
     }
     listen(channelName: string) {
@@ -197,13 +197,13 @@ export default class Pikoman {
         }
         const channel = channelName.startsWith('presence-') ? new PresenceChannel(channelName, this) : new Channel(channelName, this);
         this.channels.set(channelName, channel);
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             channel.join();
         }
         return channel;
     }
     send(data: string) {
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             this.ws.send(data);
         }
     }

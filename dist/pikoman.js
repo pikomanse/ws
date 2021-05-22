@@ -196,7 +196,7 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.connection = function (fn) {
         this.messages.on(types_1.ConnectionStatus.Offline | types_1.ConnectionStatus.Online, fn);
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             fn.call(this, [true]);
         }
     };
@@ -208,11 +208,11 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.subscribe = function (fn) {
         this.messages.on(types_1.ConnectionStatus.Online, fn);
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             fn.call(this, this.clientId);
         }
     };
-    Pikoman.prototype.is_connected = function () {
+    Pikoman.prototype.isConnected = function () {
         return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
     };
     Pikoman.prototype.listen = function (channelName) {
@@ -222,13 +222,13 @@ var Pikoman = /** @class */ (function () {
         }
         var channel = channelName.startsWith('presence-') ? new channel_1.PresenceChannel(channelName, this) : new channel_1.Channel(channelName, this);
         this.channels.set(channelName, channel);
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             channel.join();
         }
         return channel;
     };
     Pikoman.prototype.send = function (data) {
-        if (this.is_connected()) {
+        if (this.isConnected()) {
             this.ws.send(data);
         }
     };

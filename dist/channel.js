@@ -60,29 +60,11 @@ var Channel = /** @class */ (function () {
         this.name = name;
         this.pikoman = pikoman;
     }
-    Channel.prototype.getAuthUrl = function () {
-        return this.pikoman.getAuthUrl() + "/" + this.name;
-    };
     Channel.prototype.join = function () {
         this.pikoman.send("2:" + this.name);
     };
-    Channel.prototype.subscribe = function (fn) {
-        this.messages.on(types_1.MessageType.Subscribe, fn);
-    };
-    Channel.prototype.clients = function (fn) {
-        this.messages.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, fn);
-    };
-    Channel.prototype.unsubscribe = function (fn) {
-        this.messages.on(types_1.MessageType.Unsubscribe, fn);
-    };
     Channel.prototype.serverMessage = function (fn) {
         this.messages.on(types_1.MessageType.ServerMessage, fn);
-    };
-    Channel.prototype.clientMessage = function (fn) {
-        this.messages.on(types_1.MessageType.ClientMessage, fn);
-    };
-    Channel.prototype.send = function (data) {
-        this.pikoman.send("8:" + this.name + ":" + data);
     };
     Channel.prototype.clear = function () {
         this.messages.clear();
@@ -118,6 +100,24 @@ var PresenceChannel = /** @class */ (function (_super) {
                 }
             });
         }); })();
+    };
+    PresenceChannel.prototype.subscribe = function (fn) {
+        this.messages.on(types_1.MessageType.Subscribe, fn);
+    };
+    PresenceChannel.prototype.clients = function (fn) {
+        this.messages.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, fn);
+    };
+    PresenceChannel.prototype.unsubscribe = function (fn) {
+        this.messages.on(types_1.MessageType.Unsubscribe, fn);
+    };
+    PresenceChannel.prototype.clientsCount = function (fn) {
+        this.messages.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, function (event, nrOfClients) { return fn(nrOfClients); });
+    };
+    PresenceChannel.prototype.clientMessage = function (fn) {
+        this.messages.on(types_1.MessageType.ClientMessage, fn);
+    };
+    PresenceChannel.prototype.send = function (data) {
+        this.pikoman.send("8:" + this.name + ":" + data);
     };
     return PresenceChannel;
 }(Channel));
