@@ -25,5 +25,5 @@ export interface Options {
     auth_url?: string;
 }
 export interface Authenticator {
-    authenticate: (channelName: string, options: Options) => Promise<string>;
+    authenticate: (clientId: number, channelName: string, options: Options) => Promise<string>;
 }

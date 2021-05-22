@@ -186,6 +186,9 @@ var Pikoman = /** @class */ (function () {
     Pikoman.prototype.sendPing = function () {
         this.send("64:" + new Date().getTime());
     };
+    Pikoman.prototype.getClientId = function () {
+        return this.clientId;
+    };
     Pikoman.prototype.state = function (fn) {
         this.messages.on(types_1.ConnectionStatus.Offline | types_1.ConnectionStatus.Loading | types_1.ConnectionStatus.Online, fn);
     };

@@ -105,7 +105,7 @@ var PresenceChannel = /** @class */ (function (_super) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
                         authenticator = this.pikoman.getAuthenticator();
-                        return [4 /*yield*/, authenticator.authenticate(this.name, this.pikoman.getOptions())];
+                        return [4 /*yield*/, authenticator.authenticate(this.pikoman.getClientId(), this.name, this.pikoman.getOptions())];
                     case 1:
                         response = _a.sent();
                         this.pikoman.send(response);
