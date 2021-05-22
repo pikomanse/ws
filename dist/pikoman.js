@@ -154,12 +154,11 @@ var Pikoman = /** @class */ (function () {
     Pikoman.prototype.client = function (clientId) {
         this.clientId = clientId;
         this.messages.dispatch(types_1.ConnectionStatus.Online, [true]);
+        this.clearOfflineTimeout();
         this.rejoin();
     };
     Pikoman.prototype.onOpen = function () {
         this.status = types_1.ConnectionStatus.Online;
-        this.messages.dispatch(types_1.ConnectionStatus.Online, [true]);
-        this.clearOfflineTimeout();
     };
     Pikoman.prototype.onClose = function () {
         var data = [];
@@ -197,7 +196,7 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.connection = function (fn) {
         this.messages.on(types_1.ConnectionStatus.Offline | types_1.ConnectionStatus.Online, fn);
-        if (this.status === types_1.ConnectionStatus.Online) {
+        if (this.is_connected()) {
             fn.call(this, [true]);
         }
     };
@@ -209,9 +208,12 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.subscribe = function (fn) {
         this.messages.on(types_1.ConnectionStatus.Online, fn);
-        if (this.status === types_1.ConnectionStatus.Online) {
+        if (this.is_connected()) {
             fn.call(this, this.clientId);
         }
+    };
+    Pikoman.prototype.is_connected = function () {
+        return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
     };
     Pikoman.prototype.listen = function (channelName) {
         var existingChannel = this.channels.get(channelName);
@@ -220,13 +222,15 @@ var Pikoman = /** @class */ (function () {
         }
         var channel = channelName.startsWith('presence-') ? new channel_1.PresenceChannel(channelName, this) : new channel_1.Channel(channelName, this);
         this.channels.set(channelName, channel);
+        if (this.is_connected()) {
+            channel.join();
+        }
         return channel;
     };
     Pikoman.prototype.send = function (data) {
-        if (this.ws.readyState !== WebSocket.OPEN) {
-            return;
+        if (this.is_connected()) {
+            this.ws.send(data);
         }
-        this.ws.send(data);
     };
     Pikoman.prototype.clear = function () {
         this.messages.clear();

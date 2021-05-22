@@ -136,12 +136,11 @@ export default class Pikoman {
     private client(clientId: number) {
         this.clientId = clientId;
         this.messages.dispatch(ConnectionStatus.Online, [true]);
+        this.clearOfflineTimeout();
         this.rejoin();
     }
     private onOpen() {
         this.status = ConnectionStatus.Online;
-        this.messages.dispatch(ConnectionStatus.Online, [true]);
-        this.clearOfflineTimeout();
     }
     private onClose(...data: any[]) {
         this.status = ConnectionStatus.Offline;
@@ -172,7 +171,7 @@ export default class Pikoman {
     }
     connection(fn: Fn) {
         this.messages.on(ConnectionStatus.Offline | ConnectionStatus.Online, fn);
-        if (this.status === ConnectionStatus.Online) {
+        if (this.is_connected()) {
             fn.call(this, [true]);
         }
     }
@@ -184,9 +183,12 @@ export default class Pikoman {
     }
     subscribe(fn: Fn) {
         this.messages.on(ConnectionStatus.Online, fn);
-        if (this.status === ConnectionStatus.Online) {
+        if (this.is_connected()) {
             fn.call(this, this.clientId);
         }
+    }
+    is_connected() {
+        return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
     }
     listen(channelName: string) {
         const existingChannel = this.channels.get(channelName);
@@ -195,13 +197,15 @@ export default class Pikoman {
         }
         const channel = channelName.startsWith('presence-') ? new PresenceChannel(channelName, this) : new Channel(channelName, this);
         this.channels.set(channelName, channel);
+        if (this.is_connected()) {
+            channel.join();
+        }
         return channel;
     }
     send(data: string) {
-        if (this.ws.readyState !== WebSocket.OPEN) {
-            return;
+        if (this.is_connected()) {
+            this.ws.send(data);
         }
-        this.ws.send(data);
     }
     clear() {
         this.messages.clear();

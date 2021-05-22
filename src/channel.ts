@@ -9,7 +9,6 @@ export class Channel {
     constructor(name: string, pikoman: Pikoman) {
         this.name = name;
         this.pikoman = pikoman;
-        this.join();
     }
     protected getAuthUrl() {
         return `${this.pikoman.getAuthUrl()}/${this.name}`;
@@ -43,8 +42,9 @@ export class PresenceChannel extends Channel {
     join() {
         (async () => {
             try {
+                const clientId = this.pikoman.getClientId();
                 const authenticator = this.pikoman.getAuthenticator();
-                const response = await authenticator.authenticate(this.pikoman.getClientId(), this.name, this.pikoman.getOptions());
+                const response = await authenticator.authenticate(clientId, this.name, this.pikoman.getOptions());
                 this.pikoman.send(response);
             } catch (e) {
                 console.error(`Pikoman: ${e.message}`);

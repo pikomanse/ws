@@ -59,7 +59,6 @@ var Channel = /** @class */ (function () {
         this.messages = new message_handler_1.MessageHandler(this);
         this.name = name;
         this.pikoman = pikoman;
-        this.join();
     }
     Channel.prototype.getAuthUrl = function () {
         return this.pikoman.getAuthUrl() + "/" + this.name;
@@ -99,13 +98,14 @@ var PresenceChannel = /** @class */ (function (_super) {
     PresenceChannel.prototype.join = function () {
         var _this = this;
         (function () { return __awaiter(_this, void 0, void 0, function () {
-            var authenticator, response, e_1;
+            var clientId, authenticator, response, e_1;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
+                        clientId = this.pikoman.getClientId();
                         authenticator = this.pikoman.getAuthenticator();
-                        return [4 /*yield*/, authenticator.authenticate(this.pikoman.getClientId(), this.name, this.pikoman.getOptions())];
+                        return [4 /*yield*/, authenticator.authenticate(clientId, this.name, this.pikoman.getOptions())];
                     case 1:
                         response = _a.sent();
                         this.pikoman.send(response);
