@@ -1,4 +1,4 @@
-import { Channel } from "./channel";
+import { Channel, PresenceChannel } from "./channel";
 import { Authenticator, Fn, Options } from "./types";
 export default class Pikoman {
     private readonly appId;
@@ -38,6 +38,7 @@ export default class Pikoman {
     subscribe(fn: Fn): void;
     isConnected(): boolean;
     listen(channelName: string): Channel;
+    listenPresence(channelName: string): PresenceChannel;
     send(data: string): void;
     clear(): void;
 }

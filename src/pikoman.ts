@@ -190,12 +190,30 @@ export default class Pikoman {
     isConnected() {
         return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
     }
-    listen(channelName: string) {
+    listen(channelName: string): Channel {
+        if (channelName.startsWith('presence-')) {
+            throw new Error(`Presence channels should be listened to using the listenPresence method`);
+        }
         const existingChannel = this.channels.get(channelName);
         if (existingChannel) {
             return existingChannel;
         }
-        const channel = channelName.startsWith('presence-') ? new PresenceChannel(channelName, this) : new Channel(channelName, this);
+        const channel = new Channel(channelName, this);
+        this.channels.set(channelName, channel);
+        if (this.isConnected()) {
+            channel.join();
+        }
+        return channel;
+    }
+    listenPresence(channelName: string): PresenceChannel {
+        if (!channelName.startsWith('presence-')) {
+            throw new Error(`Presence channels must start with prefix presence`);
+        }
+        const existingChannel = this.channels.get(channelName);
+        if (existingChannel) {
+            return existingChannel as PresenceChannel;
+        }
+        const channel = new PresenceChannel(channelName, this);
         this.channels.set(channelName, channel);
         if (this.isConnected()) {
             channel.join();

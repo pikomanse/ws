@@ -216,11 +216,29 @@ var Pikoman = /** @class */ (function () {
         return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
     };
     Pikoman.prototype.listen = function (channelName) {
+        if (channelName.startsWith('presence-')) {
+            throw new Error("Presence channels should be listened to using the listenPresence method");
+        }
         var existingChannel = this.channels.get(channelName);
         if (existingChannel) {
             return existingChannel;
         }
-        var channel = channelName.startsWith('presence-') ? new channel_1.PresenceChannel(channelName, this) : new channel_1.Channel(channelName, this);
+        var channel = new channel_1.Channel(channelName, this);
+        this.channels.set(channelName, channel);
+        if (this.isConnected()) {
+            channel.join();
+        }
+        return channel;
+    };
+    Pikoman.prototype.listenPresence = function (channelName) {
+        if (!channelName.startsWith('presence-')) {
+            throw new Error("Presence channels must start with prefix presence");
+        }
+        var existingChannel = this.channels.get(channelName);
+        if (existingChannel) {
+            return existingChannel;
+        }
+        var channel = new channel_1.PresenceChannel(channelName, this);
         this.channels.set(channelName, channel);
         if (this.isConnected()) {
             channel.join();
