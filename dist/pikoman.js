@@ -108,6 +108,7 @@ var Pikoman = /** @class */ (function () {
                 }
                 channel.addMember(userId, userData);
                 channel.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
+                channel.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [channel.getMembers()]);
                 break;
             }
             case types_1.MessageType.Unsubscribe: {
@@ -118,6 +119,7 @@ var Pikoman = /** @class */ (function () {
                 }
                 channel.removeMember(userId);
                 channel.opcodes.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
+                channel.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [channel.getMembers()]);
                 break;
             }
             case types_1.MessageType.ClientMessage: {
