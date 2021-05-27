@@ -119,11 +119,9 @@ var PresenceChannel = /** @class */ (function (_super) {
     };
     PresenceChannel.prototype.addMember = function (userId, data) {
         this.membersMap.set(userId, data);
-        this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.membersMap]);
     };
     PresenceChannel.prototype.removeMember = function (userId) {
         this.membersMap.delete(userId);
-        this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.membersMap]);
     };
     PresenceChannel.prototype.getMember = function (userId) {
         return this.membersMap.get(userId.toString());

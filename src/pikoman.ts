@@ -93,6 +93,7 @@ export default class Pikoman {
                 }
                 channel.addMember(userId, userData);
                 channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
+                channel.opcodes.dispatch(MessageType.ClientsInChannel, [channel.getMembers()]);
                 break;
             }
             case MessageType.Unsubscribe: {
@@ -103,6 +104,7 @@ export default class Pikoman {
                 }
                 channel.removeMember(userId);
                 channel.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
+                channel.opcodes.dispatch(MessageType.ClientsInChannel, [channel.getMembers()]);
                 break;
             }
             case MessageType.ClientMessage: {
