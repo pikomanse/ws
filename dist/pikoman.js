@@ -140,6 +140,8 @@ var Pikoman = /** @class */ (function () {
                 var members = new Map(Object.entries(JSON.parse(membersStr)));
                 channel.setMembers(members);
                 channel.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [members]);
+                // TODO: Add wrapper around members that simplify this stuff.
+                channel.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, Array.from(channel.getMembers().keys()).length, this.getClientId(), JSON.parse(channel.getMember(this.getClientId()))]);
                 break;
             }
             case types_1.MessageType.Ping: {

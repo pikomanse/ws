@@ -125,6 +125,8 @@ export default class Pikoman {
                 const members = new Map(Object.entries(JSON.parse(membersStr)));
                 channel.setMembers(members);
                 channel.opcodes.dispatch(MessageType.ClientsInChannel, [members]);
+                // TODO: Add wrapper around members that simplify this stuff.
+                channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, Array.from(channel.getMembers().keys()).length, this.getClientId(), JSON.parse(channel.getMember(this.getClientId()))]);
                 break;
             }
             case MessageType.Ping: {
