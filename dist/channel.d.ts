@@ -1,5 +1,5 @@
 import Pikoman from "./pikoman";
-import { Fn, Listener, MessageType } from "./types";
+import { Authenticator, Fn, Listener, MessageType } from "./types";
 import { OpCodeHandler } from "./opcode_handler";
 export declare class Channel {
     protected readonly name: string;
@@ -14,8 +14,17 @@ export declare class Channel {
     clear(): void;
 }
 export declare class PresenceChannel extends Channel {
+    private authenticator;
+    private membersMap;
+    constructor(name: string, pikoman: Pikoman, authenticator?: Authenticator);
     join(): void;
+    getMembers(): Map<string, any>;
+    addMember(userId: string, data: any): void;
+    removeMember(userId: string): void;
+    getMember(userId: number): any;
+    setMembers(members: Map<string, any>): void;
     subscribe(fn: Fn): void;
+    members(fn: Fn): void;
     clients(fn: Fn): void;
     unsubscribe(fn: Fn): void;
     clientsCount(fn: Fn): void;

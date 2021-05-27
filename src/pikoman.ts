@@ -1,8 +1,8 @@
 import {Channel, PresenceChannel} from "./channel";
 import {splitn} from "./helpers";
 import {Authenticator, ConnectionStatus, Fn, MessageType, Options} from "./types";
-import URLAuthenticator from "./authenticators/url_authenticator";
 import {OpCodeHandler} from "./opcode_handler";
+import { HttpAuthenticator } from "./authenticators";
 
 const defaultOptions: Options = {
     ws_address: 'wss://ws.pikoman.se',
@@ -18,7 +18,6 @@ export default class Pikoman {
     private messages = new OpCodeHandler<ConnectionStatus>(this);
     private options: Options = defaultOptions;
     private ws: WebSocket;
-    private authenticator: Authenticator = new URLAuthenticator();
     constructor(appId: string, options = defaultOptions) {
         this.appId = appId;
         this.options = {
@@ -36,12 +35,6 @@ export default class Pikoman {
         ws.onmessage = this.onMessage.bind(this);
         ws.onclose = this.onClose.bind(this);
         ws.onerror = this.onOffline.bind(this);
-    }
-    public getAuthenticator() {
-        return this.authenticator;
-    }
-    public setAuthenticator(authenticator: Authenticator) {
-        this.authenticator = authenticator;
     }
     public getOptions() {
         return this.options;
@@ -94,19 +87,21 @@ export default class Pikoman {
             }
             case MessageType.Subscribe: {
                 const [_opcode, channelName, nrOfUsers, userId, userData] = splitn(`${data}`, ':', 4);
-                const channel = this.channels.get(channelName);
+                const channel = this.channels.get(channelName) as PresenceChannel;
                 if (!channel) {
                     return;
                 }
+                channel.addMember(userId, userData);
                 channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
                 break;
             }
             case MessageType.Unsubscribe: {
                 const [_opcode, channelName, nrOfUsers, userId] = splitn(`${data}`, ':', 3);
-                const channel = this.channels.get(channelName);
+                const channel = this.channels.get(channelName) as PresenceChannel;
                 if (!channel) {
                     return;
                 }
+                channel.removeMember(userId);
                 channel.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
                 break;
             }
@@ -117,6 +112,17 @@ export default class Pikoman {
                     return;
                 }
                 channel.opcodes.dispatch(MessageType.ClientMessage, rest);
+                break;
+            }
+            case MessageType.ClientsInChannel: {
+                const [_opcode, channelName, membersStr] = splitn(`${data}`, ':', 2);
+                const channel = this.channels.get(channelName) as PresenceChannel;
+                if (!channel) {
+                    return;
+                }
+                const members = new Map(Object.entries(JSON.parse(membersStr)));
+                channel.setMembers(members);
+                channel.opcodes.dispatch(MessageType.ClientsInChannel, [members]);
                 break;
             }
             case MessageType.Ping: {
@@ -205,7 +211,7 @@ export default class Pikoman {
         }
         return channel;
     }
-    listenPresence(channelName: string): PresenceChannel {
+    listenPresence(channelName: string, authenticator: Authenticator = new HttpAuthenticator()): PresenceChannel {
         if (!channelName.startsWith('presence-')) {
             throw new Error(`Presence channels must start with prefix presence`);
         }
@@ -213,7 +219,7 @@ export default class Pikoman {
         if (existingChannel) {
             return existingChannel as PresenceChannel;
         }
-        const channel = new PresenceChannel(channelName, this);
+        const channel = new PresenceChannel(channelName, this, authenticator);
         this.channels.set(channelName, channel);
         if (this.isConnected()) {
             channel.join();

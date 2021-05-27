@@ -16,7 +16,7 @@ describe(`Pikoman`, () => {
     it(`Should call subscribe fn`, () => {
         const expectedResult = [MessageType.Subscribe, '1', 'data'];
         const pikoman = new Pikoman();
-        const channel = pikoman.listen(`test`);
+        const channel = pikoman.listenPresence(`presence-test`);
         const spy = sinon.spy();
         channel.subscribe(spy);
         channel.opcodes.dispatch(MessageType.Subscribe, expectedResult);
@@ -25,7 +25,7 @@ describe(`Pikoman`, () => {
     it(`Should call message fn`, () => {
         const expectedResult = ['2', 'data'];
         const pikoman = new Pikoman();
-        const channel = pikoman.listen(`presence-test`);
+        const channel = pikoman.listenPresence(`presence-test`);
         const spy = sinon.spy();
         channel.clientMessage(spy);
         channel.opcodes.dispatch(MessageType.ClientMessage, expectedResult);
@@ -34,7 +34,7 @@ describe(`Pikoman`, () => {
     it(`Should call clients fn upon join`, () => {
         const expectedResult = [MessageType.Subscribe, '2', 'data'];
         const pikoman = new Pikoman();
-        const channel = pikoman.listen(`presence-test`);
+        const channel = pikoman.listenPresence(`presence-test`);
         const spy = sinon.spy();
         channel.clients(spy);
         channel.opcodes.dispatch(MessageType.Subscribe, expectedResult);
@@ -43,7 +43,7 @@ describe(`Pikoman`, () => {
     it(`Should call clients fn upon leave`, () => {
         const expectedResult = [MessageType.Unsubscribe, '2', 'data'];
         const pikoman = new Pikoman();
-        const channel = pikoman.listen(`presence-test`);
+        const channel = pikoman.listenPresence(`presence-test`);
         const spy = sinon.spy();
         channel.clients(spy);
         channel.opcodes.dispatch(MessageType.Subscribe, expectedResult);

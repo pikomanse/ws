@@ -1,7 +1,8 @@
 import Pikoman from "./pikoman";
-import {Fn, Listener, MessageType} from "./types";
+import {Authenticator, Fn, Listener, MessageType} from "./types";
 import {OpCodeHandler} from "./opcode_handler";
-import { AllListener } from "./listeners";
+import {AllListener} from "./listeners";
+import {HttpAuthenticator} from "./authenticators";
 
 export class Channel {
     protected readonly name: string;
@@ -30,20 +31,45 @@ export class Channel {
     }
 }
 export class PresenceChannel extends Channel {
+    private authenticator: Authenticator;
+    private membersMap: Map<string, any> = new Map();
+    constructor(name: string, pikoman: Pikoman, authenticator: Authenticator = new HttpAuthenticator()) {
+        super(name, pikoman);
+        this.authenticator = authenticator;
+    }
     join() {
         (async () => {
             try {
                 const clientId = this.pikoman.getClientId();
-                const authenticator = this.pikoman.getAuthenticator();
-                const response = await authenticator.authenticate(clientId, this.name, this.pikoman.getOptions());
+                const response = await this.authenticator.authenticate(clientId, this.name, this.pikoman.getOptions());
                 this.pikoman.send(response);
             } catch (e) {
                 console.error(`Pikoman: ${e.message}`);
             }
         })();
     }
+    getMembers() {
+        return this.membersMap;
+    }
+    addMember(userId: string, data: any) {
+        this.membersMap.set(userId, data);
+        this.opcodes.dispatch(MessageType.ClientsInChannel, [this.membersMap]);
+    }
+    removeMember(userId: string) {
+        this.membersMap.delete(userId);
+        this.opcodes.dispatch(MessageType.ClientsInChannel, [this.membersMap]);
+    }
+    getMember(userId: number) {
+        return this.membersMap.get(userId.toString());
+    }
+    setMembers(members: Map<string, any>) {
+        this.membersMap = members;
+    }
     subscribe(fn: Fn) {
         this.opcodes.on(MessageType.Subscribe, fn);
+    }
+    members(fn: Fn) {
+        this.opcodes.on(MessageType.ClientsInChannel, fn);
     }
     clients(fn: Fn) {
         this.opcodes.on(MessageType.Subscribe | MessageType.Unsubscribe, fn);

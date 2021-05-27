@@ -55,6 +55,7 @@ exports.PresenceChannel = exports.Channel = void 0;
 var types_1 = require("./types");
 var opcode_handler_1 = require("./opcode_handler");
 var listeners_1 = require("./listeners");
+var authenticators_1 = require("./authenticators");
 var Channel = /** @class */ (function () {
     function Channel(name, pikoman) {
         this.opcodes = new opcode_handler_1.OpCodeHandler(this);
@@ -83,20 +84,23 @@ var Channel = /** @class */ (function () {
 exports.Channel = Channel;
 var PresenceChannel = /** @class */ (function (_super) {
     __extends(PresenceChannel, _super);
-    function PresenceChannel() {
-        return _super !== null && _super.apply(this, arguments) || this;
+    function PresenceChannel(name, pikoman, authenticator) {
+        if (authenticator === void 0) { authenticator = new authenticators_1.HttpAuthenticator(); }
+        var _this = _super.call(this, name, pikoman) || this;
+        _this.membersMap = new Map();
+        _this.authenticator = authenticator;
+        return _this;
     }
     PresenceChannel.prototype.join = function () {
         var _this = this;
         (function () { return __awaiter(_this, void 0, void 0, function () {
-            var clientId, authenticator, response, e_1;
+            var clientId, response, e_1;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
                         clientId = this.pikoman.getClientId();
-                        authenticator = this.pikoman.getAuthenticator();
-                        return [4 /*yield*/, authenticator.authenticate(clientId, this.name, this.pikoman.getOptions())];
+                        return [4 /*yield*/, this.authenticator.authenticate(clientId, this.name, this.pikoman.getOptions())];
                     case 1:
                         response = _a.sent();
                         this.pikoman.send(response);
@@ -110,8 +114,28 @@ var PresenceChannel = /** @class */ (function (_super) {
             });
         }); })();
     };
+    PresenceChannel.prototype.getMembers = function () {
+        return this.membersMap;
+    };
+    PresenceChannel.prototype.addMember = function (userId, data) {
+        this.membersMap.set(userId, data);
+        this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.membersMap]);
+    };
+    PresenceChannel.prototype.removeMember = function (userId) {
+        this.membersMap.delete(userId);
+        this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.membersMap]);
+    };
+    PresenceChannel.prototype.getMember = function (userId) {
+        return this.membersMap.get(userId.toString());
+    };
+    PresenceChannel.prototype.setMembers = function (members) {
+        this.membersMap = members;
+    };
     PresenceChannel.prototype.subscribe = function (fn) {
         this.opcodes.on(types_1.MessageType.Subscribe, fn);
+    };
+    PresenceChannel.prototype.members = function (fn) {
+        this.opcodes.on(types_1.MessageType.ClientsInChannel, fn);
     };
     PresenceChannel.prototype.clients = function (fn) {
         this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, fn);

@@ -12,10 +12,10 @@ export function authChannelWithSecret(clientId: number, channelName: string, dat
 }
 
 export default class OfflineAuthenticator implements Authenticator {
-    private readonly data: string;
+    private readonly data: any;
     private readonly secret: string;
     private readonly permissions: number;
-    constructor(data: string, secret: string, permissions: number) {
+    constructor(data: any, secret: string, permissions: number) {
         this.data = data;
         this.secret = secret;
         this.permissions = permissions;

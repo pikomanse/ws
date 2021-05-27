@@ -8,6 +8,7 @@ var MessageType;
     MessageType[MessageType["Subscribe"] = 2] = "Subscribe";
     MessageType[MessageType["Unsubscribe"] = 4] = "Unsubscribe";
     MessageType[MessageType["ClientMessage"] = 8] = "ClientMessage";
+    MessageType[MessageType["ClientsInChannel"] = 16] = "ClientsInChannel";
     MessageType[MessageType["Ping"] = 64] = "Ping";
     MessageType[MessageType["Unknown"] = 65] = "Unknown";
 })(MessageType = exports.MessageType || (exports.MessageType = {}));

@@ -1,6 +1,6 @@
 import {Authenticator, Options} from "../types";
 
-export default class URLAuthenticator implements Authenticator {
+export default class Http_authenticator implements Authenticator {
     private getAuthUrl(clientId: number, channelName: string, options: Options): string {
         if (!channelName) {
             throw new Error(`Need channelName`);

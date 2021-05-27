@@ -1,4 +1,4 @@
-import UrlAuthenticator from './url_authenticator';
+import HttpAuthenticator from './http_authenticator';
 import OfflineAuthenticator from './offline_authenticator';
 
-export { UrlAuthenticator, OfflineAuthenticator };
+export { HttpAuthenticator, OfflineAuthenticator };

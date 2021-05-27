@@ -4,6 +4,7 @@ export enum MessageType {
     Subscribe = 2,
     Unsubscribe = 4,
     ClientMessage = 8,
+    ClientsInChannel = 16,
     Ping = 64,
     Unknown
 }

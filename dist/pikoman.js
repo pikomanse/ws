@@ -15,15 +15,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from) {
         to[j] = from[i];
     return to;
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 var channel_1 = require("./channel");
 var helpers_1 = require("./helpers");
 var types_1 = require("./types");
-var url_authenticator_1 = __importDefault(require("./authenticators/url_authenticator"));
 var opcode_handler_1 = require("./opcode_handler");
+var authenticators_1 = require("./authenticators");
 var defaultOptions = {
     ws_address: 'wss://ws.pikoman.se',
 };
@@ -38,7 +35,6 @@ var Pikoman = /** @class */ (function () {
         this.channels = new Map();
         this.messages = new opcode_handler_1.OpCodeHandler(this);
         this.options = defaultOptions;
-        this.authenticator = new url_authenticator_1.default();
         this.appId = appId;
         this.options = __assign(__assign({}, defaultOptions), options);
         this.ws = new WebSocket(this.getAppWsUrl());
@@ -52,12 +48,6 @@ var Pikoman = /** @class */ (function () {
         ws.onmessage = this.onMessage.bind(this);
         ws.onclose = this.onClose.bind(this);
         ws.onerror = this.onOffline.bind(this);
-    };
-    Pikoman.prototype.getAuthenticator = function () {
-        return this.authenticator;
-    };
-    Pikoman.prototype.setAuthenticator = function (authenticator) {
-        this.authenticator = authenticator;
     };
     Pikoman.prototype.getOptions = function () {
         return this.options;
@@ -116,6 +106,7 @@ var Pikoman = /** @class */ (function () {
                 if (!channel) {
                     return;
                 }
+                channel.addMember(userId, userData);
                 channel.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
                 break;
             }
@@ -125,6 +116,7 @@ var Pikoman = /** @class */ (function () {
                 if (!channel) {
                     return;
                 }
+                channel.removeMember(userId);
                 channel.opcodes.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
                 break;
             }
@@ -137,12 +129,23 @@ var Pikoman = /** @class */ (function () {
                 channel.opcodes.dispatch(types_1.MessageType.ClientMessage, rest);
                 break;
             }
+            case types_1.MessageType.ClientsInChannel: {
+                var _g = helpers_1.splitn("" + data, ':', 2), _opcode = _g[0], channelName = _g[1], membersStr = _g[2];
+                var channel = this.channels.get(channelName);
+                if (!channel) {
+                    return;
+                }
+                var members = new Map(Object.entries(JSON.parse(membersStr)));
+                channel.setMembers(members);
+                channel.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [members]);
+                break;
+            }
             case types_1.MessageType.Ping: {
                 this.clearOfflineTimeout();
                 break;
             }
             default: {
-                var _g = helpers_1.splitn("" + data, ':', 3), _opcode = _g[0], channelName = _g[1], rest = _g.slice(2);
+                var _h = helpers_1.splitn("" + data, ':', 3), _opcode = _h[0], channelName = _h[1], rest = _h.slice(2);
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
@@ -230,7 +233,8 @@ var Pikoman = /** @class */ (function () {
         }
         return channel;
     };
-    Pikoman.prototype.listenPresence = function (channelName) {
+    Pikoman.prototype.listenPresence = function (channelName, authenticator) {
+        if (authenticator === void 0) { authenticator = new authenticators_1.HttpAuthenticator(); }
         if (!channelName.startsWith('presence-')) {
             throw new Error("Presence channels must start with prefix presence");
         }
@@ -238,7 +242,7 @@ var Pikoman = /** @class */ (function () {
         if (existingChannel) {
             return existingChannel;
         }
-        var channel = new channel_1.PresenceChannel(channelName, this);
+        var channel = new channel_1.PresenceChannel(channelName, this, authenticator);
         this.channels.set(channelName, channel);
         if (this.isConnected()) {
             channel.join();

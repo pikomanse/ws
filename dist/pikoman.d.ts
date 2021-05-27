@@ -11,11 +11,8 @@ export default class Pikoman {
     private messages;
     private options;
     private ws;
-    private authenticator;
     constructor(appId: string, options?: Options);
     private bindWebSocket;
-    getAuthenticator(): Authenticator;
-    setAuthenticator(authenticator: Authenticator): void;
     getOptions(): Options;
     setOptions(options: Options): void;
     getAuthUrl(): string | undefined;
@@ -38,7 +35,7 @@ export default class Pikoman {
     subscribe(fn: Fn): void;
     isConnected(): boolean;
     listen(channelName: string): Channel;
-    listenPresence(channelName: string): PresenceChannel;
+    listenPresence(channelName: string, authenticator?: Authenticator): PresenceChannel;
     send(data: string): void;
     clear(): void;
 }
