@@ -124,7 +124,7 @@ var PresenceChannel = /** @class */ (function (_super) {
         this.membersMap.delete(userId);
     };
     PresenceChannel.prototype.getMember = function (userId) {
-        return this.membersMap.get(userId.toString());
+        return this.membersMap.get(userId);
     };
     PresenceChannel.prototype.setMembers = function (members) {
         this.membersMap = members;

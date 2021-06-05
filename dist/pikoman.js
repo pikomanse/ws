@@ -27,7 +27,7 @@ var defaultOptions = {
 var Pikoman = /** @class */ (function () {
     function Pikoman(appId, options) {
         if (options === void 0) { options = defaultOptions; }
-        this.clientId = -1;
+        this.clientId = '';
         this.timeoutOffline = 0;
         this.timeoutSendPing = 0;
         this.timeoutReconnect = 0;
@@ -86,8 +86,7 @@ var Pikoman = /** @class */ (function () {
         var data = _a.data;
         switch (parseInt(data.substring(0, data.indexOf(':')), 10)) {
             case types_1.MessageType.Connection: {
-                var _b = helpers_1.splitn("" + data, ':', 1), _opcode = _b[0], clientIdStr = _b[1];
-                var clientId = parseInt(clientIdStr, 10) || -1;
+                var _b = helpers_1.splitn("" + data, ':', 1), _opcode = _b[0], clientId = _b[1];
                 this.client(clientId);
                 break;
             }
@@ -220,7 +219,7 @@ var Pikoman = /** @class */ (function () {
         }
     };
     Pikoman.prototype.isConnected = function () {
-        return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
+        return this.ws.readyState === WebSocket.OPEN && this.clientId !== '';
     };
     Pikoman.prototype.listen = function (channelName) {
         if (channelName.startsWith('presence-')) {

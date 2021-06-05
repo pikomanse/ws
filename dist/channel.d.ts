@@ -21,7 +21,7 @@ export declare class PresenceChannel extends Channel {
     getMembers(): Map<string, any>;
     addMember(userId: string, data: any): void;
     removeMember(userId: string): void;
-    getMember(userId: number): any;
+    getMember(userId: string): any;
     setMembers(members: Map<string, any>): void;
     subscribe(fn: Fn): void;
     members(fn: Fn): void;

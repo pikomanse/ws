@@ -26,7 +26,7 @@ export default class Pikoman {
     private onOffline;
     private clearOfflineTimeout;
     private sendPing;
-    getClientId(): number;
+    getClientId(): string;
     state(fn: Fn): void;
     online(fn: Fn): void;
     connection(fn: Fn): void;

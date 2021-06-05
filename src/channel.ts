@@ -57,8 +57,8 @@ export class PresenceChannel extends Channel {
     removeMember(userId: string) {
         this.membersMap.delete(userId);
     }
-    getMember(userId: number) {
-        return this.membersMap.get(userId.toString());
+    getMember(userId: string) {
+        return this.membersMap.get(userId);
     }
     setMembers(members: Map<string, any>) {
         this.membersMap = members;

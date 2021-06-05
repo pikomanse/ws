@@ -9,7 +9,7 @@ const defaultOptions: Options = {
 };
 export default class Pikoman {
     private readonly appId: string;
-    private clientId: number = -1;
+    private clientId: string = '';
     private timeoutOffline: any = 0;
     private timeoutSendPing: any = 0;
     private timeoutReconnect: any = 0;
@@ -71,8 +71,7 @@ export default class Pikoman {
     private onMessage({ data }: { data: string }) {
         switch (parseInt(data.substring(0, data.indexOf(':')), 10)) {
             case MessageType.Connection: {
-                const [_opcode, clientIdStr] = splitn(`${data}`, ':', 1);
-                const clientId = parseInt(clientIdStr, 10) || -1;
+                const [_opcode, clientId] = splitn(`${data}`, ':', 1);
                 this.client(clientId);
                 break;
             }
@@ -143,7 +142,7 @@ export default class Pikoman {
             }
         }
     }
-    private client(clientId: number) {
+    private client(clientId: string) {
         this.clientId = clientId;
         this.messages.dispatch(ConnectionStatus.Online, [true]);
         this.clearOfflineTimeout();
@@ -170,7 +169,7 @@ export default class Pikoman {
     private sendPing() {
         this.send(`64:${new Date().getTime()}`);
     }
-    getClientId(): number {
+    getClientId(): string {
         return this.clientId;
     }
     state(fn: Fn) {
@@ -198,7 +197,7 @@ export default class Pikoman {
         }
     }
     isConnected() {
-        return this.ws.readyState === WebSocket.OPEN && this.clientId !== -1;
+        return this.ws.readyState === WebSocket.OPEN && this.clientId !== '';
     }
     listen(channelName: string): Channel {
         if (channelName.startsWith('presence-')) {

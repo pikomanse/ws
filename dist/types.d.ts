@@ -26,7 +26,7 @@ export interface Options {
     auth_url?: string;
 }
 export interface Authenticator {
-    authenticate: (clientId: number, channelName: string, options: Options) => Promise<string>;
+    authenticate: (clientId: string, channelName: string, options: Options) => Promise<string>;
 }
 export interface Listener {
     on(topic: string, fn: Fn): void;
