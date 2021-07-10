@@ -1,5 +1,6 @@
 import Topics from "../topics";
 import {Fn, Listener} from "../types";
+import {splitn} from "../helpers";
 
 export default class EventsListener implements Listener {
     private topics;
@@ -10,7 +11,7 @@ export default class EventsListener implements Listener {
         if (data.length === 0) {
             return;
         }
-        const [eventName, rest] = data.split(':');
+        const [eventName, rest] = splitn(data, ":", 1);
         try {
             this.topics.dispatch(eventName, JSON.parse(rest));
         } catch (e) {
@@ -33,7 +34,7 @@ export class StringEventsListener implements Listener {
         if (data.length === 0) {
             return;
         }
-        const [eventName, rest] = data.split(':');
+        const [eventName, rest] = splitn(data, ":", 1);
         this.topics.dispatch(eventName, rest);
     }
     on(topic: string, fn: Fn): void {
