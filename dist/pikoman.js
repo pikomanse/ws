@@ -86,21 +86,21 @@ var Pikoman = /** @class */ (function () {
         var data = _a.data;
         switch (parseInt(data.substring(0, data.indexOf(':')), 10)) {
             case types_1.MessageType.Connection: {
-                var _b = helpers_1.splitn("" + data, ':', 1), _opcode = _b[0], clientId = _b[1];
+                var _b = helpers_1.splitn("" + data, ':', 2), _opcode = _b[0], clientId = _b[1];
                 this.client(clientId);
                 break;
             }
             case types_1.MessageType.ServerMessage: {
-                var _c = helpers_1.splitn("" + data, ':', 2), _opcode = _c[0], channelName = _c[1], rest = _c[2];
+                var _c = helpers_1.splitn("" + data, ':', 3), _opcode = _c[0], channelName = _c[1], rest = _c[2];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
                 }
-                channel.dispatch(rest);
+                channel.messages.dispatch(rest);
                 break;
             }
             case types_1.MessageType.Subscribe: {
-                var _d = helpers_1.splitn("" + data, ':', 4), _opcode = _d[0], channelName = _d[1], nrOfUsers = _d[2], userId = _d[3], userData = _d[4];
+                var _d = helpers_1.splitn("" + data, ':', 5), _opcode = _d[0], channelName = _d[1], nrOfUsers = _d[2], userId = _d[3], userData = _d[4];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
@@ -111,7 +111,7 @@ var Pikoman = /** @class */ (function () {
                 break;
             }
             case types_1.MessageType.Unsubscribe: {
-                var _e = helpers_1.splitn("" + data, ':', 3), _opcode = _e[0], channelName = _e[1], nrOfUsers = _e[2], userId = _e[3];
+                var _e = helpers_1.splitn("" + data, ':', 4), _opcode = _e[0], channelName = _e[1], nrOfUsers = _e[2], userId = _e[3];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
@@ -122,16 +122,17 @@ var Pikoman = /** @class */ (function () {
                 break;
             }
             case types_1.MessageType.ClientMessage: {
-                var _f = helpers_1.splitn("" + data, ':', 3), _opcode = _f[0], channelName = _f[1], rest = _f.slice(2);
+                var _f = helpers_1.splitn("" + data, ':', 3), _opcode = _f[0], channelName = _f[1], rest = _f[2];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
                 }
-                channel.opcodes.dispatch(types_1.MessageType.ClientMessage, rest);
+                channel.messages.dispatchClient(rest);
+                channel.opcodes.dispatch(types_1.MessageType.ClientMessage, [rest]);
                 break;
             }
             case types_1.MessageType.ClientsInChannel: {
-                var _g = helpers_1.splitn("" + data, ':', 2), _opcode = _g[0], channelName = _g[1], membersStr = _g[2];
+                var _g = helpers_1.splitn("" + data, ':', 3), _opcode = _g[0], channelName = _g[1], membersStr = _g[2];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
@@ -148,12 +149,12 @@ var Pikoman = /** @class */ (function () {
                 break;
             }
             default: {
-                var _h = helpers_1.splitn("" + data, ':', 3), _opcode = _h[0], channelName = _h[1], rest = _h.slice(2);
+                var _h = helpers_1.splitn("" + data, ':', 3), _opcode = _h[0], channelName = _h[1], rest = _h[2];
                 var channel = this.channels.get(channelName);
                 if (!channel) {
                     return;
                 }
-                channel.opcodes.dispatch(types_1.MessageType.Unknown, rest);
+                channel.opcodes.dispatch(types_1.MessageType.Unknown, [rest]);
             }
         }
     };

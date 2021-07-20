@@ -6,6 +6,9 @@ var Topics = /** @class */ (function () {
         this.topics = new Map();
         this.context = context;
     }
+    Topics.prototype.setContext = function (context) {
+        this.context = context;
+    };
     /**
      * Bind a observer to a specific topic
      * @param {Topic} topic

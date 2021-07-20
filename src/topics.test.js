@@ -1,6 +1,7 @@
 import Topics from './topics.ts';
 
-const noop = () => {};
+const noop = () => {
+};
 describe('Topics', () => {
   it('Should be able to set up and tear down observers', () => {
     const topics = new Topics();
@@ -28,18 +29,14 @@ describe('Topics', () => {
     const logger2 = (val) => console.log(`Incoming 2: ${val}`);
 
     // Setup
-    topics.on('test', logger)
-    .on('test', logger2)
-    .off('test', logger);
+    topics.on('test', logger).on('test', logger2).off('test', logger);
 
     expect(topics.getObservers('test')).toEqual([logger2]);
     expect(
-        topics.off('test', logger)
-        .getObservers('test')
+        topics.off('test', logger).getObservers('test'),
     ).toEqual([logger2]);
     expect(
-        topics.off('test', logger2)
-        .getObservers('test')
+        topics.off('test', logger2).getObservers('test'),
     ).toEqual([]);
   });
   describe('getTopics', () => {

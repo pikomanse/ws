@@ -14,7 +14,7 @@ var EventsListener = /** @class */ (function () {
         if (data.length === 0) {
             return;
         }
-        var _a = helpers_1.splitn(data, ":", 1), eventName = _a[0], rest = _a[1];
+        var _a = helpers_1.splitn(data, ":", 2), eventName = _a[0], rest = _a[1];
         try {
             this.topics.dispatch(eventName, JSON.parse(rest));
         }
@@ -39,7 +39,7 @@ var StringEventsListener = /** @class */ (function () {
         if (data.length === 0) {
             return;
         }
-        var _a = helpers_1.splitn(data, ":", 1), eventName = _a[0], rest = _a[1];
+        var _a = helpers_1.splitn(data, ":", 2), eventName = _a[0], rest = _a[1];
         this.topics.dispatch(eventName, rest);
     };
     StringEventsListener.prototype.on = function (topic, fn) {

@@ -10,6 +10,7 @@ export default class Http_authenticator implements Authenticator {
         }
         return `${options.auth_url}/${clientId}-${channelName}`;
     }
+
     async authenticate(clientId: string, channelName: string, options: Options): Promise<string> {
         const url = this.getAuthUrl(clientId, channelName, options);
         const request = await fetch(url);

@@ -50,34 +50,95 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PresenceChannel = exports.Channel = void 0;
+exports.PresenceChannel = exports.Channel = exports.AllEvents = exports.EventsHandler = void 0;
 var types_1 = require("./types");
 var opcode_handler_1 = require("./opcode_handler");
-var listeners_1 = require("./listeners");
 var authenticators_1 = require("./authenticators");
+var topics_1 = __importDefault(require("./topics"));
+var helpers_1 = require("./helpers");
+var EventsHandler = /** @class */ (function () {
+    function EventsHandler(context) {
+        this.context = context;
+        this.topics = new topics_1.default(context);
+    }
+    EventsHandler.prototype.setContext = function (context) {
+        this.topics.setContext(context);
+        this.context = context;
+    };
+    EventsHandler.prototype.dispatchClient = function (args) {
+        var _a = helpers_1.splitn(args, ":", 3), _b = _a[0], id = _b === void 0 ? 0 : _b, _c = _a[1], event = _c === void 0 ? 'all' : _c, rest = _a[2];
+        this.topics.dispatch(event, id, rest);
+        return this;
+    };
+    EventsHandler.prototype.dispatch = function (args) {
+        var _a = helpers_1.splitn(args, ":", 3), _b = _a[0], event = _b === void 0 ? 'all' : _b, rest = _a[1];
+        this.topics.dispatch(event, rest);
+        return this;
+    };
+    EventsHandler.prototype.on = function (event, fn) {
+        this.topics.on(event, fn);
+        return this;
+    };
+    EventsHandler.prototype.off = function (event, fn) {
+        this.topics.off(event, fn);
+        return this;
+    };
+    return EventsHandler;
+}());
+exports.EventsHandler = EventsHandler;
+var AllEvents = /** @class */ (function () {
+    function AllEvents(context) {
+        this.catchAllEvent = 'all';
+        this.context = context;
+        this.topics = new topics_1.default(context);
+    }
+    AllEvents.prototype.setContext = function (context) {
+        this.topics.setContext(context);
+        this.context = context;
+    };
+    AllEvents.prototype.dispatchClient = function (args) {
+        var _a = helpers_1.splitn(args, ":", 2), _b = _a[0], id = _b === void 0 ? 0 : _b, rest = _a[1];
+        this.topics.dispatch(this.catchAllEvent, id, rest);
+        return this;
+    };
+    AllEvents.prototype.dispatch = function (args) {
+        this.topics.dispatch(this.catchAllEvent, args);
+        return this;
+    };
+    AllEvents.prototype.on = function (_event, fn) {
+        this.topics.on(this.catchAllEvent, fn);
+        return this;
+    };
+    AllEvents.prototype.off = function (event, fn) {
+        this.topics.off(this.catchAllEvent, fn);
+        return this;
+    };
+    return AllEvents;
+}());
+exports.AllEvents = AllEvents;
 var Channel = /** @class */ (function () {
     function Channel(name, pikoman) {
         this.opcodes = new opcode_handler_1.OpCodeHandler(this);
-        this.listener = new listeners_1.AllListener(this);
+        this.messages = new EventsHandler(this);
         this.name = name;
         this.pikoman = pikoman;
     }
-    Channel.prototype.setListener = function (listener) {
-        this.listener = listener;
+    Channel.prototype.setEventsHandler = function (eventsHandler) {
+        eventsHandler.setContext(this);
+        this.messages = eventsHandler;
     };
     Channel.prototype.join = function () {
         this.pikoman.send("2:" + this.name);
     };
     Channel.prototype.serverMessage = function (fn) {
-        this.listener.on('all', fn);
-    };
-    Channel.prototype.dispatch = function (data) {
-        this.listener.dispatch(data);
+        this.opcodes.on(types_1.MessageType.ServerMessage, fn);
     };
     Channel.prototype.clear = function () {
         this.opcodes.clear();
-        this.listener.clear();
     };
     return Channel;
 }());
@@ -145,10 +206,13 @@ var PresenceChannel = /** @class */ (function (_super) {
         this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, function (event, nrOfClients) { return fn(nrOfClients); });
     };
     PresenceChannel.prototype.clientMessage = function (fn) {
-        this.opcodes.on(types_1.MessageType.ClientMessage, fn);
+        this.opcodes.on(types_1.MessageType.ClientMessage, function (data) {
+            var _a = helpers_1.splitn(data, ':', 2), clientId = _a[0], msg = _a[1];
+            fn(clientId, msg);
+        });
     };
     PresenceChannel.prototype.send = function (data) {
-        this.pikoman.send("8:" + this.name + ":" + data);
+        this.pikoman.send(types_1.MessageType.ClientMessage + ":" + this.name + ":" + data);
     };
     return PresenceChannel;
 }(Channel));

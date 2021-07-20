@@ -1,16 +1,36 @@
 import Pikoman from "./pikoman";
-import { Authenticator, Fn, Listener, MessageType } from "./types";
+import { Authenticator, Fn, MessageType } from "./types";
 import { OpCodeHandler } from "./opcode_handler";
+export declare class EventsHandler {
+    private context;
+    private topics;
+    constructor(context?: any);
+    setContext(context?: any): void;
+    dispatchClient(args: string): this;
+    dispatch(args: string): this;
+    on(event: string, fn: Fn): this;
+    off(event: string, fn: Fn): this;
+}
+export declare class AllEvents {
+    private context;
+    private topics;
+    private catchAllEvent;
+    constructor(context?: any);
+    setContext(context?: any): void;
+    dispatchClient(args: string): this;
+    dispatch(args: string): this;
+    on(_event: string, fn: Fn): this;
+    off(event: string, fn: Fn): this;
+}
 export declare class Channel {
     protected readonly name: string;
     protected readonly pikoman: Pikoman;
     opcodes: OpCodeHandler<MessageType>;
-    listener: Listener;
+    messages: EventsHandler;
     constructor(name: string, pikoman: Pikoman);
-    setListener(listener: Listener): void;
+    setEventsHandler(eventsHandler: any): void;
     join(): void;
     serverMessage(fn: Fn): void;
-    dispatch(data: string): void;
     clear(): void;
 }
 export declare class PresenceChannel extends Channel {

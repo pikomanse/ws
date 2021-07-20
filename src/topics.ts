@@ -2,8 +2,13 @@ import {Fn} from "./types";
 
 export class Topics {
     private readonly topics = new Map<string, Fn[]>();
-    private readonly context;
+    private context;
+
     constructor(context?: any) {
+        this.context = context;
+    }
+
+    setContext(context?: any) {
         this.context = context;
     }
 
@@ -21,6 +26,7 @@ export class Topics {
         }
         return this;
     }
+
     /**
      * Get all observers for a specific topic
      * @param {Topic} topic
@@ -29,6 +35,7 @@ export class Topics {
     getObservers(topic: string): Fn[] {
         return this.topics.get(topic) ?? [];
     };
+
     /**
      * Get a list of all the subscribed topics by name
      * @returns {Topic[]}
@@ -36,6 +43,7 @@ export class Topics {
     getTopics(): string[] {
         return Array.from(this.topics.keys());
     }
+
     /**
      * Get all observers
      * @returns {Observer[]}
@@ -45,6 +53,7 @@ export class Topics {
         const flatArray = (a: Fn[], b: Fn[]) => a.concat(b);
         return Array.from(this.topics.values()).reduce(flatArray, []);
     }
+
     /**
      * Unbind all or a specific observer for a topic
      * @param {Topic} topic
@@ -69,9 +78,11 @@ export class Topics {
 
         return this;
     }
+
     clear() {
         this.topics.clear();
     }
+
     dispatch(topic: string, ...data: any[]) {
         this.getObservers(topic).forEach(fn => fn.apply(this.context, data));
     }

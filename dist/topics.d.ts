@@ -1,8 +1,9 @@
 import { Fn } from "./types";
 export declare class Topics {
     private readonly topics;
-    private readonly context;
+    private context;
     constructor(context?: any);
+    setContext(context?: any): void;
     /**
      * Bind a observer to a specific topic
      * @param {Topic} topic

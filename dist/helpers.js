@@ -4,7 +4,7 @@ exports.splitn = void 0;
 function splitn(str, splitAt, nrOfSplitAtBreakpoints) {
     var currentIndex = 0;
     var strings = [];
-    while (nrOfSplitAtBreakpoints-- > 0) {
+    while (--nrOfSplitAtBreakpoints > 0) {
         var nextIndex = str.indexOf(splitAt, currentIndex);
         strings.push(str.substr(currentIndex, nextIndex - currentIndex));
         currentIndex = nextIndex + 1;
