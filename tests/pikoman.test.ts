@@ -9,7 +9,7 @@ describe(`Pikoman`, () => {
         it(`Should split message accordingly`, () => {
             const input = `8:presence-test:122:testing :)`;
             const expectedResult = ['8', 'presence-test', '122', 'testing :)'];
-            const result = splitn(input, ':', 3);
+            const result = splitn(input, ':', 4);
             expect(result).toEqual(expectedResult);
         });
     });
@@ -28,7 +28,7 @@ describe(`Pikoman`, () => {
         const channel = pikoman.listenPresence(`presence-test`);
         const spy = sinon.spy();
         channel.clientMessage(spy);
-        channel.opcodes.dispatch(MessageType.ClientMessage, expectedResult);
+        channel.opcodes.dispatch(MessageType.ClientMessage, ['2:data']);
         expect(spy.getCall(0).args).toEqual(expectedResult);
     });
     it(`Should call clients fn upon join`, () => {

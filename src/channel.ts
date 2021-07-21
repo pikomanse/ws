@@ -21,13 +21,21 @@ export class EventsHandler {
 
     dispatchClient(args: string) {
         const [id = 0, event = 'all', rest] = splitn(args, ":", 3);
-        this.topics.dispatch(event, id, rest);
+        try {
+            this.topics.dispatch(event, id, JSON.parse(rest));
+        } catch (e) {
+            this.topics.dispatch(event, id, rest);
+        }
         return this;
     }
 
     dispatch(args: string) {
-        const [event = 'all', rest] = splitn(args, ":", 3);
-        this.topics.dispatch(event, rest);
+        const [event = 'all', rest] = splitn(args, ":", 2);
+        try {
+            this.topics.dispatch(event, JSON.parse(rest));
+        } catch (e) {
+            this.topics.dispatch(event, rest);
+        }
         return this;
     }
 
@@ -106,6 +114,16 @@ export class Channel {
     clear() {
         this.opcodes.clear();
     }
+
+    on(event: string, fn: Fn) {
+        this.messages.on(event, fn);
+        return this;
+    }
+
+    off(event: string, fn: Fn) {
+        this.messages.off(event, fn);
+        return this;
+    }
 }
 
 export class PresenceChannel extends Channel {
@@ -176,7 +194,11 @@ export class PresenceChannel extends Channel {
         });
     }
 
-    send(data: string) {
-        this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${data}`);
+    send(event: string, data: any) {
+        if (data) {
+            this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${event}:${JSON.stringify(data)}`);
+        } else {
+            this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${event}`);
+        }
     }
 }

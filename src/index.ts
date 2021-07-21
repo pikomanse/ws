@@ -15,7 +15,8 @@ export {
     OfflineAuthenticator,
     AllListener,
     EventsListener,
-    StringEventsListener
+    StringEventsListener,
+    Pikoman
 };
 export type SendData = SendDataType;
 export default Pikoman;
