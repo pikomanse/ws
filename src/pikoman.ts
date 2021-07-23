@@ -78,86 +78,21 @@ export default class Pikoman {
     }
 
     private onMessage({data}: { data: string }) {
-        if (data.startsWith(`${MessageType.Connection}:`)) {
-            const [_opcode, clientId] = splitn(`${data}`, ':', 2);
-            this.client(clientId);
-        }
-        else if (data.startsWith(`${MessageType.ServerMessage}:`)) {
-            const [_opcode, channelName, rest] = splitn(`${data}`, ':', 3);
-            const channel = this.channels.get(channelName);
-            if (!channel) {
-                return;
+        const [opcodeStr, second, rest] = splitn(data, ':', 3);
+        const opcode = parseInt(opcodeStr, 10);
+        switch (opcode) {
+            case MessageType.Connection: {
+                this.client(second);
+                break;
             }
-            channel.messages.dispatch(rest);
-            channel.opcodes.dispatch(MessageType.ServerMessage, [rest]);
-        }
-        else if (data.startsWith(`${MessageType.Subscribe}:presence-`)) {
-            const [_opcode, channelName, nrOfUsers, userId = '', userData = '{}'] = splitn(`${data}`, ':', 5);
-            let channel = this.channels.get(channelName) as PresenceChannel;
-            if (!channel) {
-                return;
+            case MessageType.Ping: {
+                this.clearOfflineTimeout();
+                break;
             }
-            channel.addMember(userId, userData);
-            channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
-            channel.opcodes.dispatch(MessageType.ClientsInChannel, [channel.getMembers()]);
-        }
-        else if (data.startsWith(`${MessageType.Subscribe}:`)) {
-            const [_opcode, channelName] = splitn(`${data}`, ':', 2);
-            let channel = this.channels.get(channelName);
-            if (!channel) {
-                return;
+            default: {
+                const channel = this.channels.get(second);
+                if (channel) channel.dispatch(opcode, rest);
             }
-            channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe]);
-        }
-        else if (data.startsWith(`${MessageType.Unsubscribe}:presence-`)) {
-            const [_opcode, channelName, nrOfUsers, userId] = splitn(`${data}`, ':', 4);
-            const channel = this.channels.get(channelName) as PresenceChannel;
-            if (!channel) {
-                return;
-            }
-            channel.removeMember(userId);
-            channel.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
-            channel.opcodes.dispatch(MessageType.ClientsInChannel, [channel.getMembers()]);
-        }
-        else if (data.startsWith(`${MessageType.Unsubscribe}:`)) {
-            const [_opcode, channelName] = splitn(`${data}`, ':', 2);
-            const channel = this.channels.get(channelName);
-            if (!channel) {
-                return;
-            }
-            channel.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe]);
-        }
-        else if (data.startsWith(`${MessageType.ClientMessage}:`)) {
-            const [_opcode, channelName, rest] = splitn(`${data}`, ':', 3);
-            const channel = this.channels.get(channelName);
-            if (!channel) {
-                return;
-            }
-            channel.messages.dispatchClient(rest);
-            channel.opcodes.dispatch(MessageType.ClientMessage, [rest]);
-        }
-        else if (data.startsWith(`${MessageType.ClientsInChannel}:`)) {
-            const [_opcode, channelName, membersStr] = splitn(`${data}`, ':', 3);
-            const channel = this.channels.get(channelName) as PresenceChannel;
-            if (!channel) {
-                return;
-            }
-            const members = new Map(Object.entries(JSON.parse(membersStr)));
-            channel.setMembers(members);
-            channel.opcodes.dispatch(MessageType.ClientsInChannel, [members]);
-            // TODO: Add wrapper around members that simplify this stuff.
-            channel.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, Array.from(channel.getMembers().keys()).length, this.getClientId(), JSON.parse(channel.getMember(this.getClientId()))]);
-        }
-        else if (data.startsWith(`${MessageType.Ping}:`)) {
-            this.clearOfflineTimeout();
-        }
-        else {
-            const [_opcode, channelName, rest] = splitn(`${data}`, ':', 3);
-            const channel = this.channels.get(channelName);
-            if (!channel) {
-                return;
-            }
-            channel.opcodes.dispatch(MessageType.Unknown, [rest]);
         }
     }
 

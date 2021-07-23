@@ -90,8 +90,8 @@ export class AllEvents {
 export class Channel {
     protected readonly name: string;
     protected readonly pikoman: Pikoman;
-    public opcodes = new OpCodeHandler<MessageType>(this);
-    public messages = new EventsHandler(this);
+    protected opcodes = new OpCodeHandler<MessageType>(this);
+    protected messages = new EventsHandler(this);
 
     constructor(name: string, pikoman: Pikoman) {
         this.name = name;
@@ -123,6 +123,26 @@ export class Channel {
     off(event: string, fn: Fn) {
         this.messages.off(event, fn);
         return this;
+    }
+    dispatch(opcode: number, data: string) {
+        switch (opcode) {
+            case MessageType.ServerMessage: {
+                this.messages.dispatch(data);
+                this.opcodes.dispatch(MessageType.ServerMessage, [data]);
+                break;
+            }
+            case MessageType.Subscribe: {
+                this.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe]);
+                break;
+            }
+            case MessageType.Unsubscribe: {
+                this.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe]);
+                break;
+            }
+            default: {
+                this.opcodes.dispatch(MessageType.Unknown, [data]);
+            }
+        }
     }
 }
 
@@ -193,12 +213,44 @@ export class PresenceChannel extends Channel {
             fn(clientId, msg);
         });
     }
-
-    send(event: string, data: any) {
+    dispatch(opcode: number, data: string) {
+        switch (opcode) {
+            case MessageType.Subscribe: {
+                const [nrOfUsers, userId = '', userData = '{}'] = splitn(data, ':', 3);
+                this.addMember(userId, userData);
+                this.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
+                this.opcodes.dispatch(MessageType.ClientsInChannel, [this.getMembers()]);
+                break;
+            }
+            case MessageType.Unsubscribe: {
+                const [nrOfUsers, userId] = splitn(`${data}`, ':', 2);
+                this.removeMember(userId);
+                this.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
+                this.opcodes.dispatch(MessageType.ClientsInChannel, [this.getMembers()]);
+                break;
+            }
+            case MessageType.ClientMessage: {
+                this.messages.dispatchClient(data);
+                this.opcodes.dispatch(MessageType.ClientMessage, [data]);
+                break;
+            }
+            case MessageType.ClientsInChannel: {
+                const members = new Map(Object.entries(JSON.parse(data)));
+                this.setMembers(members);
+                this.opcodes.dispatch(MessageType.ClientsInChannel, [members]);
+                this.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe, Array.from(this.getMembers().keys()).length, this.pikoman.getClientId(), JSON.parse(this.getMember(this.pikoman.getClientId()))]);
+                break;
+            }
+            default: {
+                super.dispatch(opcode, data);
+            }
+        }
+    }
+    send(event: string, data: any, toAll = false) {
         if (data) {
-            this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${event}:${JSON.stringify(data)}`);
+            this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${Number(toAll)}:${event}:${JSON.stringify(data)}`);
         } else {
-            this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${event}`);
+            this.pikoman.send(`${MessageType.ClientMessage}:${this.name}:${Number(toAll)}:${event}`);
         }
     }
 }
