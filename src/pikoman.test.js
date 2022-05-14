@@ -26,7 +26,7 @@ describe('Pikoman', () => {
       const allData = `8:presence-video-collaborate-99f7a0c29d8b097129927a1571567e7ee58eb610:323:client-video-play`;
       const presenceChannel = 'presence-video-collaborate-c39c0fefc8ae0c790d77d68e9492d7d40eff8e2d';
       const eventName = 'suggest-video';
-      const data = `8:${presenceChannel}:323:${eventName}`;
+      const data = `8:${presenceChannel}:323:${eventName}:data`;
       const pikoman = new Pikoman();
       const channel = pikoman.listenPresence(presenceChannel);
       const spy = sinon.spy();
@@ -34,7 +34,7 @@ describe('Pikoman', () => {
       channel.messages.on(eventName, (...args) => {
         expect(spy.called).toBe(true);
         expect(args).
-            toEqual(['323']);
+            toEqual(['323', 'data']);
         resolve();
       });
       pikoman.onMessage({
