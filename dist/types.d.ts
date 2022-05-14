@@ -22,7 +22,7 @@ export interface MessageCallback<T extends number> {
     type: T;
 }
 export interface Options {
-    ws_address: string;
+    ws_address?: string;
     auth_url?: string;
 }
 export interface Authenticator {

@@ -27,7 +27,7 @@ export interface MessageCallback<T extends number> {
 }
 
 export interface Options {
-    ws_address: string;
+    ws_address?: string;
     auth_url?: string;
 }
 
