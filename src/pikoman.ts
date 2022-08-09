@@ -197,6 +197,15 @@ export default class Pikoman {
         }
         return channel;
     }
+    
+    leaveChannel(channelName: string) {
+        const existingChannel = this.channels.get(channelName);
+        if (existingChannel) {
+            existingChannel.leave();
+            existingChannel.clear();
+            this.channels.delete(channelName);
+        }
+    }
 
     send(data: string) {
         if (this.isConnected()) {
