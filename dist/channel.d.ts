@@ -30,6 +30,7 @@ export declare class Channel {
     constructor(name: string, pikoman: Pikoman);
     setEventsHandler(eventsHandler: any): void;
     join(): void;
+    leave(): void;
     serverMessage(fn: Fn): void;
     clear(): void;
     on(event: string, fn: Fn): this;

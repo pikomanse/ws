@@ -144,6 +144,9 @@ var Channel = /** @class */ (function () {
     Channel.prototype.join = function () {
         this.pikoman.send("2:" + this.name);
     };
+    Channel.prototype.leave = function () {
+        this.pikoman.send("4:" + this.name);
+    };
     Channel.prototype.serverMessage = function (fn) {
         this.opcodes.on(types_1.MessageType.ServerMessage, fn);
     };

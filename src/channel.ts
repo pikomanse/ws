@@ -107,6 +107,10 @@ export class Channel {
         this.pikoman.send(`2:${this.name}`);
     }
 
+    leave() {
+        this.pikoman.send(`4:${this.name}`);
+    }
+
     serverMessage(fn: Fn) {
         this.opcodes.on(MessageType.ServerMessage, fn);
     }
