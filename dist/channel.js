@@ -70,7 +70,7 @@ var EventsHandler = /** @class */ (function () {
         this.context = context;
     };
     EventsHandler.prototype.dispatchClient = function (args) {
-        var _a = helpers_1.splitn(args, ":", 3), _b = _a[0], id = _b === void 0 ? 0 : _b, _c = _a[1], event = _c === void 0 ? 'all' : _c, rest = _a[2];
+        var _a = helpers_1.splitn(args, ":", 3), _b = _a[0], id = _b === void 0 ? 0 : _b, _c = _a[1], event = _c === void 0 ? "all" : _c, rest = _a[2];
         try {
             this.topics.dispatch(event, id, JSON.parse(rest));
         }
@@ -80,7 +80,7 @@ var EventsHandler = /** @class */ (function () {
         return this;
     };
     EventsHandler.prototype.dispatch = function (args) {
-        var _a = helpers_1.splitn(args, ":", 2), _b = _a[0], event = _b === void 0 ? 'all' : _b, rest = _a[1];
+        var _a = helpers_1.splitn(args, ":", 2), _b = _a[0], event = _b === void 0 ? "all" : _b, rest = _a[1];
         try {
             this.topics.dispatch(event, JSON.parse(rest));
         }
@@ -102,7 +102,7 @@ var EventsHandler = /** @class */ (function () {
 exports.EventsHandler = EventsHandler;
 var AllEvents = /** @class */ (function () {
     function AllEvents(context) {
-        this.catchAllEvent = 'all';
+        this.catchAllEvent = "all";
         this.context = context;
         this.topics = new topics_1.default(context);
     }
@@ -146,6 +146,7 @@ var Channel = /** @class */ (function () {
     };
     Channel.prototype.leave = function () {
         this.pikoman.send("4:" + this.name);
+        this.pikoman.leaveChannel(this.name);
     };
     Channel.prototype.serverMessage = function (fn) {
         this.opcodes.on(types_1.MessageType.ServerMessage, fn);
@@ -173,7 +174,9 @@ var Channel = /** @class */ (function () {
                 break;
             }
             case types_1.MessageType.Unsubscribe: {
-                this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe]);
+                this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [
+                    types_1.MessageType.Unsubscribe,
+                ]);
                 break;
             }
             default: {
@@ -248,24 +251,37 @@ var PresenceChannel = /** @class */ (function (_super) {
     };
     PresenceChannel.prototype.clientMessage = function (fn) {
         this.opcodes.on(types_1.MessageType.ClientMessage, function (data) {
-            var _a = helpers_1.splitn(data, ':', 2), clientId = _a[0], msg = _a[1];
+            var _a = helpers_1.splitn(data, ":", 2), clientId = _a[0], msg = _a[1];
             fn(clientId, msg);
         });
     };
     PresenceChannel.prototype.dispatch = function (opcode, data) {
         switch (opcode) {
             case types_1.MessageType.Subscribe: {
-                var _a = helpers_1.splitn(data, ':', 3), nrOfUsers = _a[0], _b = _a[1], userId = _b === void 0 ? '' : _b, _c = _a[2], userData = _c === void 0 ? '{}' : _c;
+                var _a = helpers_1.splitn(data, ":", 3), nrOfUsers = _a[0], _b = _a[1], userId = _b === void 0 ? "" : _b, _c = _a[2], userData = _c === void 0 ? "{}" : _c;
                 this.addMember(userId, userData);
-                this.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, parseInt(nrOfUsers, 10), userId, JSON.parse(userData)]);
-                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.getMembers()]);
+                this.opcodes.dispatch(types_1.MessageType.Subscribe, [
+                    types_1.MessageType.Subscribe,
+                    parseInt(nrOfUsers, 10),
+                    userId,
+                    JSON.parse(userData),
+                ]);
+                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [
+                    this.getMembers(),
+                ]);
                 break;
             }
             case types_1.MessageType.Unsubscribe: {
-                var _d = helpers_1.splitn("" + data, ':', 2), nrOfUsers = _d[0], userId = _d[1];
+                var _d = helpers_1.splitn("" + data, ":", 2), nrOfUsers = _d[0], userId = _d[1];
                 this.removeMember(userId);
-                this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe, parseInt(nrOfUsers, 10), userId]);
-                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.getMembers()]);
+                this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [
+                    types_1.MessageType.Unsubscribe,
+                    parseInt(nrOfUsers, 10),
+                    userId,
+                ]);
+                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [
+                    this.getMembers(),
+                ]);
                 break;
             }
             case types_1.MessageType.ClientMessage: {
@@ -277,7 +293,12 @@ var PresenceChannel = /** @class */ (function (_super) {
                 var members = new Map(Object.entries(JSON.parse(data)));
                 this.setMembers(members);
                 this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [members]);
-                this.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe, Array.from(this.getMembers().keys()).length, this.pikoman.getClientId(), JSON.parse(this.getMember(this.pikoman.getClientId()))]);
+                this.opcodes.dispatch(types_1.MessageType.Subscribe, [
+                    types_1.MessageType.Subscribe,
+                    Array.from(this.getMembers().keys()).length,
+                    this.pikoman.getClientId(),
+                    JSON.parse(this.getMember(this.pikoman.getClientId())),
+                ]);
                 break;
             }
             default: {

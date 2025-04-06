@@ -36,6 +36,7 @@ export default class Pikoman {
     isConnected(): boolean;
     listen(channelName: string): Channel;
     listenPresence(channelName: string, authenticator?: Authenticator): PresenceChannel;
+    leaveChannel(channelName: string): void;
     send(data: string): void;
     clear(): void;
 }

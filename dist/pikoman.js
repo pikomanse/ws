@@ -22,12 +22,12 @@ var types_1 = require("./types");
 var opcode_handler_1 = require("./opcode_handler");
 var authenticators_1 = require("./authenticators");
 var defaultOptions = {
-    ws_address: 'wss://ws.pikoman.se',
+    ws_address: "wss://ws.pikoman.se",
 };
 var Pikoman = /** @class */ (function () {
     function Pikoman(appId, options) {
         if (options === void 0) { options = defaultOptions; }
-        this.clientId = '';
+        this.clientId = "";
         this.timeoutOffline = 0;
         this.timeoutSendPing = 0;
         this.timeoutReconnect = 0;
@@ -57,7 +57,7 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.getAuthUrl = function () {
         if (!this.options) {
-            throw new Error('No auth_url');
+            throw new Error("No auth_url");
         }
         return this.options.auth_url;
     };
@@ -84,7 +84,7 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.onMessage = function (_a) {
         var data = _a.data;
-        var _b = helpers_1.splitn(data, ':', 3), opcodeStr = _b[0], second = _b[1], rest = _b[2];
+        var _b = helpers_1.splitn(data, ":", 3), opcodeStr = _b[0], second = _b[1], rest = _b[2];
         var opcode = parseInt(opcodeStr, 10);
         switch (opcode) {
             case types_1.MessageType.Connection: {
@@ -140,7 +140,9 @@ var Pikoman = /** @class */ (function () {
         return this.clientId;
     };
     Pikoman.prototype.state = function (fn) {
-        this.messages.on(types_1.ConnectionStatus.Offline | types_1.ConnectionStatus.Loading | types_1.ConnectionStatus.Online, fn);
+        this.messages.on(types_1.ConnectionStatus.Offline |
+            types_1.ConnectionStatus.Loading |
+            types_1.ConnectionStatus.Online, fn);
     };
     Pikoman.prototype.online = function (fn) {
         this.messages.on(types_1.ConnectionStatus.Online, fn);
@@ -164,10 +166,10 @@ var Pikoman = /** @class */ (function () {
         }
     };
     Pikoman.prototype.isConnected = function () {
-        return this.ws.readyState === WebSocket.OPEN && this.clientId !== '';
+        return this.ws.readyState === WebSocket.OPEN && this.clientId !== "";
     };
     Pikoman.prototype.listen = function (channelName) {
-        if (channelName.startsWith('presence-')) {
+        if (channelName.startsWith("presence-")) {
             throw new Error("Presence channels should be listened to using the listenPresence method");
         }
         var existingChannel = this.channels.get(channelName);
@@ -183,7 +185,7 @@ var Pikoman = /** @class */ (function () {
     };
     Pikoman.prototype.listenPresence = function (channelName, authenticator) {
         if (authenticator === void 0) { authenticator = new authenticators_1.HttpAuthenticator(); }
-        if (!channelName.startsWith('presence-')) {
+        if (!channelName.startsWith("presence-")) {
             throw new Error("Presence channels must start with prefix presence");
         }
         var existingChannel = this.channels.get(channelName);
@@ -196,6 +198,14 @@ var Pikoman = /** @class */ (function () {
             channel.join();
         }
         return channel;
+    };
+    Pikoman.prototype.leaveChannel = function (channelName) {
+        var existingChannel = this.channels.get(channelName);
+        if (existingChannel) {
+            this.channels.delete(channelName);
+            existingChannel.leave();
+            existingChannel.clear();
+        }
     };
     Pikoman.prototype.send = function (data) {
         if (this.isConnected()) {
