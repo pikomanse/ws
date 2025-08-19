@@ -219,7 +219,7 @@ var PresenceChannel = /** @class */ (function (_super) {
     };
     Object.defineProperty(PresenceChannel.prototype, "me", {
         get: function () {
-            return JSON.parse(this.getMember(this.pikoman.getClientId()));
+            return this.getMember(this.pikoman.getClientId());
         },
         enumerable: false,
         configurable: true
@@ -263,13 +263,14 @@ var PresenceChannel = /** @class */ (function (_super) {
     PresenceChannel.prototype.dispatch = function (opcode, data) {
         switch (opcode) {
             case types_1.MessageType.Subscribe: {
-                var _a = helpers_1.splitn(data, ":", 3), nrOfUsers = _a[0], _b = _a[1], userId = _b === void 0 ? "" : _b, _c = _a[2], userData = _c === void 0 ? "{}" : _c;
-                this.addMember(userId, userData);
+                var _a = helpers_1.splitn(data, ":", 3), nrOfUsers = _a[0], _b = _a[1], userId = _b === void 0 ? "" : _b, _c = _a[2], userDataStr = _c === void 0 ? "{}" : _c;
+                var parsedUser = JSON.parse(userDataStr);
+                this.addMember(userId, parsedUser);
                 this.opcodes.dispatch(types_1.MessageType.Subscribe, [
                     types_1.MessageType.Subscribe,
                     parseInt(nrOfUsers, 10),
                     userId,
-                    JSON.parse(userData),
+                    parsedUser,
                 ]);
                 this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [
                     this.getMembers(),
@@ -295,7 +296,10 @@ var PresenceChannel = /** @class */ (function (_super) {
                 break;
             }
             case types_1.MessageType.ClientsInChannel: {
-                var members = new Map(Object.entries(JSON.parse(data)));
+                var members = new Map(Object.entries(JSON.parse(data)).map(function (_a) {
+                    var key = _a[0], value = _a[1];
+                    return [key, JSON.parse(value)];
+                }));
                 this.setMembers(members);
                 this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [members]);
                 this.opcodes.dispatch(types_1.MessageType.Subscribe, [

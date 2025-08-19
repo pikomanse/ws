@@ -181,7 +181,7 @@ export class PresenceChannel extends Channel {
 	}
 
 	get me() {
-		return JSON.parse(this.getMember(this.pikoman.getClientId()));
+		return this.getMember(this.pikoman.getClientId());
 	}
 
 	getMembers() {
@@ -237,13 +237,14 @@ export class PresenceChannel extends Channel {
 	dispatch(opcode: number, data: string) {
 		switch (opcode) {
 			case MessageType.Subscribe: {
-				const [nrOfUsers, userId = "", userData = "{}"] = splitn(data, ":", 3);
-				this.addMember(userId, userData);
+				const [nrOfUsers, userId = "", userDataStr = "{}"] = splitn(data, ":", 3);
+				const parsedUser = JSON.parse(userDataStr);
+				this.addMember(userId, parsedUser);
 				this.opcodes.dispatch(MessageType.Subscribe, [
 					MessageType.Subscribe,
 					parseInt(nrOfUsers, 10),
 					userId,
-					JSON.parse(userData),
+					parsedUser,
 				]);
 				this.opcodes.dispatch(MessageType.ClientsInChannel, [
 					this.getMembers(),
@@ -269,7 +270,7 @@ export class PresenceChannel extends Channel {
 				break;
 			}
 			case MessageType.ClientsInChannel: {
-				const members = new Map(Object.entries(JSON.parse(data)));
+				const members = new Map(Object.entries(JSON.parse(data) as Record<string, string>).map(([key, value]) => [key, JSON.parse(value)]));
 				this.setMembers(members);
 				this.opcodes.dispatch(MessageType.ClientsInChannel, [members]);
 				this.opcodes.dispatch(MessageType.Subscribe, [
