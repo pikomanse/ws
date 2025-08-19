@@ -45,6 +45,10 @@ export default class Pikoman {
 		ws.onerror = this.onOffline.bind(this);
 	}
 
+	public getStatus() {
+		return this.status;
+	}
+
 	public getOptions() {
 		return this.options;
 	}

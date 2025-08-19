@@ -6,17 +6,14 @@ import Topics from "./topics";
 import { splitn } from "./helpers";
 
 export class EventsHandler {
-	private context;
 	private topics: Topics;
 
 	constructor(context?: any) {
-		this.context = context;
 		this.topics = new Topics(context);
 	}
 
 	setContext(context?: any) {
 		this.topics.setContext(context);
-		this.context = context;
 	}
 
 	dispatchClient(args: string) {
@@ -129,6 +126,7 @@ export class Channel {
 		this.messages.off(event, fn);
 		return this;
 	}
+
 	dispatch(opcode: number, data: string) {
 		switch (opcode) {
 			case MessageType.ServerMessage: {
@@ -182,6 +180,10 @@ export class PresenceChannel extends Channel {
 		})();
 	}
 
+	get me() {
+		return this.membersMap.get(this.pikoman.getClientId());
+	}
+
 	getMembers() {
 		return this.membersMap;
 	}
@@ -231,6 +233,7 @@ export class PresenceChannel extends Channel {
 			fn(clientId, msg);
 		});
 	}
+
 	dispatch(opcode: number, data: string) {
 		switch (opcode) {
 			case MessageType.Subscribe: {
@@ -282,6 +285,7 @@ export class PresenceChannel extends Channel {
 			}
 		}
 	}
+
 	send(event: string, data: any, toAll = false) {
 		if (data) {
 			this.pikoman.send(
