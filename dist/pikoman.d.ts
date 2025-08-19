@@ -1,5 +1,5 @@
 import { Channel, PresenceChannel } from "./channel";
-import { Authenticator, Fn, Options } from "./types";
+import { Authenticator, ConnectionStatus, Fn, Options } from "./types";
 export default class Pikoman {
     private readonly appId;
     private clientId;
@@ -13,6 +13,7 @@ export default class Pikoman {
     private ws;
     constructor(appId: string, options?: Options);
     private bindWebSocket;
+    getStatus(): ConnectionStatus;
     getOptions(): Options;
     setOptions(options: Options): void;
     getAuthUrl(): string | undefined;

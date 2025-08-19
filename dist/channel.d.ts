@@ -2,7 +2,6 @@ import Pikoman from "./pikoman";
 import { Authenticator, Fn, MessageType } from "./types";
 import { OpCodeHandler } from "./opcode_handler";
 export declare class EventsHandler {
-    private context;
     private topics;
     constructor(context?: any);
     setContext(context?: any): void;
@@ -42,6 +41,7 @@ export declare class PresenceChannel extends Channel {
     private membersMap;
     constructor(name: string, pikoman: Pikoman, authenticator?: Authenticator);
     join(): void;
+    get me(): any;
     getMembers(): Map<string, any>;
     addMember(userId: string, data: any): void;
     removeMember(userId: string): void;

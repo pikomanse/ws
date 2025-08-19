@@ -181,7 +181,7 @@ export class PresenceChannel extends Channel {
 	}
 
 	get me() {
-		return this.membersMap.get(this.pikoman.getClientId());
+		return JSON.parse(this.getMember(this.pikoman.getClientId()));
 	}
 
 	getMembers() {
@@ -276,7 +276,7 @@ export class PresenceChannel extends Channel {
 					MessageType.Subscribe,
 					Array.from(this.getMembers().keys()).length,
 					this.pikoman.getClientId(),
-					JSON.parse(this.getMember(this.pikoman.getClientId())),
+					this.me,
 				]);
 				break;
 			}

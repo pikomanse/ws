@@ -49,6 +49,9 @@ var Pikoman = /** @class */ (function () {
         ws.onclose = this.onClose.bind(this);
         ws.onerror = this.onOffline.bind(this);
     };
+    Pikoman.prototype.getStatus = function () {
+        return this.status;
+    };
     Pikoman.prototype.getOptions = function () {
         return this.options;
     };

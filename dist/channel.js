@@ -62,12 +62,10 @@ var topics_1 = __importDefault(require("./topics"));
 var helpers_1 = require("./helpers");
 var EventsHandler = /** @class */ (function () {
     function EventsHandler(context) {
-        this.context = context;
         this.topics = new topics_1.default(context);
     }
     EventsHandler.prototype.setContext = function (context) {
         this.topics.setContext(context);
-        this.context = context;
     };
     EventsHandler.prototype.dispatchClient = function (args) {
         var _a = helpers_1.splitn(args, ":", 3), _b = _a[0], id = _b === void 0 ? 0 : _b, _c = _a[1], event = _c === void 0 ? "all" : _c, rest = _a[2];
@@ -219,6 +217,13 @@ var PresenceChannel = /** @class */ (function (_super) {
             });
         }); })();
     };
+    Object.defineProperty(PresenceChannel.prototype, "me", {
+        get: function () {
+            return JSON.parse(this.getMember(this.pikoman.getClientId()));
+        },
+        enumerable: false,
+        configurable: true
+    });
     PresenceChannel.prototype.getMembers = function () {
         return this.membersMap;
     };
@@ -297,7 +302,7 @@ var PresenceChannel = /** @class */ (function (_super) {
                     types_1.MessageType.Subscribe,
                     Array.from(this.getMembers().keys()).length,
                     this.pikoman.getClientId(),
-                    JSON.parse(this.getMember(this.pikoman.getClientId())),
+                    this.me,
                 ]);
                 break;
             }
