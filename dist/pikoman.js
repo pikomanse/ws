@@ -89,19 +89,17 @@ var Pikoman = /** @class */ (function () {
         var data = _a.data;
         var _b = helpers_1.splitn(data, ":", 3), opcodeStr = _b[0], second = _b[1], rest = _b[2];
         var opcode = parseInt(opcodeStr, 10);
+        this.clearOfflineTimeout();
         switch (opcode) {
             case types_1.MessageType.Connection: {
                 this.client(second);
                 break;
             }
-            case types_1.MessageType.Ping: {
-                this.clearOfflineTimeout();
-                break;
-            }
             default: {
                 var channel = this.channels.get(second);
-                if (channel)
+                if (channel) {
                     channel.dispatch(opcode, rest);
+                }
             }
         }
     };

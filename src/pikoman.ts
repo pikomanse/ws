@@ -90,18 +90,17 @@ export default class Pikoman {
 	private onMessage({ data }: { data: string }) {
 		const [opcodeStr, second, rest] = splitn(data, ":", 3);
 		const opcode = parseInt(opcodeStr, 10);
+		this.clearOfflineTimeout();
 		switch (opcode) {
 			case MessageType.Connection: {
 				this.client(second);
 				break;
 			}
-			case MessageType.Ping: {
-				this.clearOfflineTimeout();
-				break;
-			}
 			default: {
 				const channel = this.channels.get(second);
-				if (channel) channel.dispatch(opcode, rest);
+				if (channel) {
+					channel.dispatch(opcode, rest);
+				}
 			}
 		}
 	}
