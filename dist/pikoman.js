@@ -17,12 +17,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var channel_1 = require("./channel");
-var helpers_1 = require("./helpers");
 var types_1 = require("./types");
 var opcode_handler_1 = require("./opcode_handler");
 var authenticators_1 = require("./authenticators");
 var defaultOptions = {
-    ws_address: "wss://ws.pikoman.se",
+    // 2.0 runs on next.pikoman.se until ws.pikoman.se switches over; 1.0.0 goes back to ws.pikoman.se.
+    ws_address: "wss://next.pikoman.se",
 };
 var Pikoman = /** @class */ (function () {
     function Pikoman(appId, options) {
@@ -80,29 +80,48 @@ var Pikoman = /** @class */ (function () {
                 _this.ws = ws;
                 _this.bindWebSocket(ws);
                 _this.clearOfflineTimeout();
-                _this.rejoin();
             };
             ws.onerror = _this.reconnect.bind(_this);
         }, 5000);
     };
     Pikoman.prototype.onMessage = function (_a) {
         var data = _a.data;
-        var _b = helpers_1.splitn(data, ":", 3), opcodeStr = _b[0], second = _b[1], rest = _b[2];
-        var opcode = parseInt(opcodeStr, 10);
+        var message;
+        try {
+            message = JSON.parse(data);
+        }
+        catch (e) {
+            console.error("Pikoman: could not read message from server");
+            return;
+        }
         this.clearOfflineTimeout();
-        switch (opcode) {
-            case types_1.MessageType.Connection: {
-                this.client(second);
+        switch (message.op) {
+            case "connected": {
+                this.client(message.id);
+                break;
+            }
+            case "pong": {
+                break;
+            }
+            case "error": {
+                var channel = message.channel ? this.channels.get(message.channel) : undefined;
+                if (channel) {
+                    channel.handleError(message.code);
+                }
+                else {
+                    console.error("Pikoman: " + message.code);
+                }
                 break;
             }
             default: {
-                var channel = this.channels.get(second);
+                var channel = this.channels.get(message.channel);
                 if (channel) {
-                    channel.dispatch(opcode, rest);
+                    channel.handle(message);
                 }
             }
         }
     };
+    /** A new connection id: every channel joins again, with new tokens. */
     Pikoman.prototype.client = function (clientId) {
         this.clientId = clientId;
         this.messages.dispatch(types_1.ConnectionStatus.Online, [true]);
@@ -118,6 +137,7 @@ var Pikoman = /** @class */ (function () {
             data[_i] = arguments[_i];
         }
         this.status = types_1.ConnectionStatus.Offline;
+        this.clientId = "";
         this.messages.dispatch(types_1.ConnectionStatus.Offline, __spreadArray([false], data));
         this.reconnect();
     };
@@ -135,7 +155,7 @@ var Pikoman = /** @class */ (function () {
         this.timeoutSendPing = setTimeout(this.sendPing, 6500);
     };
     Pikoman.prototype.sendPing = function () {
-        this.send("64:" + new Date().getTime());
+        this.send({ op: "ping" });
     };
     Pikoman.prototype.getClientId = function () {
         return this.clientId;
@@ -169,36 +189,43 @@ var Pikoman = /** @class */ (function () {
     Pikoman.prototype.isConnected = function () {
         return this.ws.readyState === WebSocket.OPEN && this.clientId !== "";
     };
-    Pikoman.prototype.listen = function (channelName) {
-        if (channelName.startsWith("presence-")) {
-            throw new Error("Presence channels should be listened to using the listenPresence method");
-        }
+    Pikoman.prototype.addChannel = function (channelName, create) {
         var existingChannel = this.channels.get(channelName);
         if (existingChannel) {
             return existingChannel;
         }
-        var channel = new channel_1.Channel(channelName, this);
+        var channel = create();
         this.channels.set(channelName, channel);
         if (this.isConnected()) {
             channel.join();
         }
         return channel;
     };
+    Pikoman.prototype.listen = function (channelName) {
+        var _this = this;
+        if (channelName.startsWith("presence-")) {
+            throw new Error("Presence channels should be listened to using the listenPresence method");
+        }
+        if (channelName.startsWith("private-")) {
+            throw new Error("Private channels should be listened to using the listenPrivate method");
+        }
+        return this.addChannel(channelName, function () { return new channel_1.Channel(channelName, _this); });
+    };
+    Pikoman.prototype.listenPrivate = function (channelName, authenticator) {
+        var _this = this;
+        if (authenticator === void 0) { authenticator = new authenticators_1.HttpAuthenticator(); }
+        if (!channelName.startsWith("private-")) {
+            throw new Error("Private channels must start with prefix private-");
+        }
+        return this.addChannel(channelName, function () { return new channel_1.PrivateChannel(channelName, _this, authenticator); });
+    };
     Pikoman.prototype.listenPresence = function (channelName, authenticator) {
+        var _this = this;
         if (authenticator === void 0) { authenticator = new authenticators_1.HttpAuthenticator(); }
         if (!channelName.startsWith("presence-")) {
             throw new Error("Presence channels must start with prefix presence");
         }
-        var existingChannel = this.channels.get(channelName);
-        if (existingChannel) {
-            return existingChannel;
-        }
-        var channel = new channel_1.PresenceChannel(channelName, this, authenticator);
-        this.channels.set(channelName, channel);
-        if (this.isConnected()) {
-            channel.join();
-        }
-        return channel;
+        return this.addChannel(channelName, function () { return new channel_1.PresenceChannel(channelName, _this, authenticator); });
     };
     Pikoman.prototype.leaveChannel = function (channelName) {
         var existingChannel = this.channels.get(channelName);
@@ -208,9 +235,9 @@ var Pikoman = /** @class */ (function () {
             existingChannel.clear();
         }
     };
-    Pikoman.prototype.send = function (data) {
+    Pikoman.prototype.send = function (message) {
         if (this.isConnected()) {
-            this.ws.send(data);
+            this.ws.send(JSON.stringify(message));
         }
     };
     Pikoman.prototype.clear = function () {

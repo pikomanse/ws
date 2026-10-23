@@ -54,12 +54,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PresenceChannel = exports.Channel = exports.AllEvents = exports.EventsHandler = void 0;
+exports.PresenceChannel = exports.PrivateChannel = exports.Channel = exports.AllEvents = exports.EventsHandler = void 0;
 var types_1 = require("./types");
 var opcode_handler_1 = require("./opcode_handler");
 var authenticators_1 = require("./authenticators");
 var topics_1 = __importDefault(require("./topics"));
-var helpers_1 = require("./helpers");
+/** Calls `on(event, fn)` listeners with the event's data (and the sender, for client events). */
 var EventsHandler = /** @class */ (function () {
     function EventsHandler(context) {
         this.topics = new topics_1.default(context);
@@ -67,24 +67,12 @@ var EventsHandler = /** @class */ (function () {
     EventsHandler.prototype.setContext = function (context) {
         this.topics.setContext(context);
     };
-    EventsHandler.prototype.dispatchClient = function (args) {
-        var _a = helpers_1.splitn(args, ":", 3), _b = _a[0], id = _b === void 0 ? 0 : _b, _c = _a[1], event = _c === void 0 ? "all" : _c, rest = _a[2];
-        try {
-            this.topics.dispatch(event, id, JSON.parse(rest));
-        }
-        catch (e) {
-            this.topics.dispatch(event, id, rest);
-        }
+    EventsHandler.prototype.dispatchClient = function (event, from, data) {
+        this.topics.dispatch(event, from, data);
         return this;
     };
-    EventsHandler.prototype.dispatch = function (args) {
-        var _a = helpers_1.splitn(args, ":", 2), _b = _a[0], event = _b === void 0 ? "all" : _b, rest = _a[1];
-        try {
-            this.topics.dispatch(event, JSON.parse(rest));
-        }
-        catch (e) {
-            this.topics.dispatch(event, rest);
-        }
+    EventsHandler.prototype.dispatch = function (event, data) {
+        this.topics.dispatch(event, data);
         return this;
     };
     EventsHandler.prototype.on = function (event, fn) {
@@ -98,36 +86,35 @@ var EventsHandler = /** @class */ (function () {
     return EventsHandler;
 }());
 exports.EventsHandler = EventsHandler;
+/** Calls every listener for every event, whatever name it was registered with. */
 var AllEvents = /** @class */ (function () {
     function AllEvents(context) {
         this.catchAllEvent = "all";
-        this.context = context;
         this.topics = new topics_1.default(context);
     }
     AllEvents.prototype.setContext = function (context) {
         this.topics.setContext(context);
-        this.context = context;
     };
-    AllEvents.prototype.dispatchClient = function (args) {
-        var _a = helpers_1.splitn(args, ":", 2), _b = _a[0], id = _b === void 0 ? 0 : _b, rest = _a[1];
-        this.topics.dispatch(this.catchAllEvent, id, rest);
+    AllEvents.prototype.dispatchClient = function (event, from, data) {
+        this.topics.dispatch(this.catchAllEvent, from, event, data);
         return this;
     };
-    AllEvents.prototype.dispatch = function (args) {
-        this.topics.dispatch(this.catchAllEvent, args);
+    AllEvents.prototype.dispatch = function (event, data) {
+        this.topics.dispatch(this.catchAllEvent, event, data);
         return this;
     };
     AllEvents.prototype.on = function (_event, fn) {
         this.topics.on(this.catchAllEvent, fn);
         return this;
     };
-    AllEvents.prototype.off = function (event, fn) {
+    AllEvents.prototype.off = function (_event, fn) {
         this.topics.off(this.catchAllEvent, fn);
         return this;
     };
     return AllEvents;
 }());
 exports.AllEvents = AllEvents;
+/** A public channel: anyone with the app id can listen. */
 var Channel = /** @class */ (function () {
     function Channel(name, pikoman) {
         this.opcodes = new opcode_handler_1.OpCodeHandler(this);
@@ -135,19 +122,27 @@ var Channel = /** @class */ (function () {
         this.name = name;
         this.pikoman = pikoman;
     }
+    Channel.prototype.getName = function () {
+        return this.name;
+    };
     Channel.prototype.setEventsHandler = function (eventsHandler) {
         eventsHandler.setContext(this);
         this.messages = eventsHandler;
     };
     Channel.prototype.join = function () {
-        this.pikoman.send("2:" + this.name);
+        this.pikoman.send({ op: "join", channel: this.name });
     };
     Channel.prototype.leave = function () {
-        this.pikoman.send("4:" + this.name);
+        this.pikoman.send({ op: "leave", channel: this.name });
         this.pikoman.leaveChannel(this.name);
     };
+    /** Every event published to the channel over HTTP: `fn(data, event)`. */
     Channel.prototype.serverMessage = function (fn) {
         this.opcodes.on(types_1.MessageType.ServerMessage, fn);
+    };
+    /** The server refused to let this connection join: `fn(code)`. */
+    Channel.prototype.refused = function (fn) {
+        this.opcodes.on(types_1.MessageType.Refused, fn);
     };
     Channel.prototype.clear = function () {
         this.opcodes.clear();
@@ -160,53 +155,61 @@ var Channel = /** @class */ (function () {
         this.messages.off(event, fn);
         return this;
     };
-    Channel.prototype.dispatch = function (opcode, data) {
-        switch (opcode) {
-            case types_1.MessageType.ServerMessage: {
-                this.messages.dispatch(data);
-                this.opcodes.dispatch(types_1.MessageType.ServerMessage, [data]);
+    Channel.prototype.handle = function (message) {
+        switch (message.op) {
+            case "event": {
+                if (message.event !== undefined) {
+                    this.messages.dispatch(message.event, message.data);
+                }
+                this.opcodes.dispatch(types_1.MessageType.ServerMessage, [message.data, message.event]);
                 break;
             }
-            case types_1.MessageType.Subscribe: {
+            case "joined": {
                 this.opcodes.dispatch(types_1.MessageType.Subscribe, [types_1.MessageType.Subscribe]);
                 break;
             }
-            case types_1.MessageType.Unsubscribe: {
-                this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [
-                    types_1.MessageType.Unsubscribe,
-                ]);
+            case "left": {
+                this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [types_1.MessageType.Unsubscribe]);
                 break;
             }
             default: {
-                this.opcodes.dispatch(types_1.MessageType.Unknown, [data]);
+                this.opcodes.dispatch(types_1.MessageType.Unknown, [message]);
             }
         }
+    };
+    Channel.prototype.handleError = function (code) {
+        if (code === "join_refused") {
+            console.error("Pikoman: not allowed to join " + this.name);
+        }
+        this.opcodes.dispatch(types_1.MessageType.Refused, [code]);
     };
     return Channel;
 }());
 exports.Channel = Channel;
-var PresenceChannel = /** @class */ (function (_super) {
-    __extends(PresenceChannel, _super);
-    function PresenceChannel(name, pikoman, authenticator) {
+/**
+ * A `private-` channel: joining needs a token from the app's backend, and connections with
+ * write access can send client events to each other.
+ */
+var PrivateChannel = /** @class */ (function (_super) {
+    __extends(PrivateChannel, _super);
+    function PrivateChannel(name, pikoman, authenticator) {
         if (authenticator === void 0) { authenticator = new authenticators_1.HttpAuthenticator(); }
         var _this = _super.call(this, name, pikoman) || this;
-        _this.membersMap = new Map();
         _this.authenticator = authenticator;
         return _this;
     }
-    PresenceChannel.prototype.join = function () {
+    PrivateChannel.prototype.join = function () {
         var _this = this;
         (function () { return __awaiter(_this, void 0, void 0, function () {
-            var clientId, response, e_1;
+            var token, e_1;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
-                        clientId = this.pikoman.getClientId();
-                        return [4 /*yield*/, this.authenticator.authenticate(clientId, this.name, this.pikoman.getOptions())];
+                        return [4 /*yield*/, this.authenticator.authenticate(this.pikoman.getClientId(), this.name, this.pikoman.getOptions())];
                     case 1:
-                        response = _a.sent();
-                        this.pikoman.send(response);
+                        token = _a.sent();
+                        this.pikoman.send({ op: "join", channel: this.name, token: token });
                         return [3 /*break*/, 3];
                     case 2:
                         e_1 = _a.sent();
@@ -217,6 +220,40 @@ var PresenceChannel = /** @class */ (function (_super) {
             });
         }); })();
     };
+    /** Client events from other connections: `fn(clientId, event, data)`. */
+    PrivateChannel.prototype.clientMessage = function (fn) {
+        this.opcodes.on(types_1.MessageType.ClientMessage, fn);
+    };
+    PrivateChannel.prototype.handle = function (message) {
+        if (message.op === "client_event") {
+            this.messages.dispatchClient(message.event, message.from, message.data);
+            this.opcodes.dispatch(types_1.MessageType.ClientMessage, [message.from, message.event, message.data]);
+            return;
+        }
+        _super.prototype.handle.call(this, message);
+    };
+    /** `toAll` also delivers the event to this connection. */
+    PrivateChannel.prototype.send = function (event, data, toAll) {
+        if (toAll === void 0) { toAll = false; }
+        this.pikoman.send({
+            op: "send",
+            channel: this.name,
+            event: event,
+            data: data === undefined ? null : data,
+            echo: toAll,
+        });
+    };
+    return PrivateChannel;
+}(Channel));
+exports.PrivateChannel = PrivateChannel;
+/** A `presence-` channel: a private channel that also keeps track of who is in it. */
+var PresenceChannel = /** @class */ (function (_super) {
+    __extends(PresenceChannel, _super);
+    function PresenceChannel() {
+        var _this = _super !== null && _super.apply(this, arguments) || this;
+        _this.membersMap = new Map();
+        return _this;
+    }
     Object.defineProperty(PresenceChannel.prototype, "me", {
         get: function () {
             return this.getMember(this.pikoman.getClientId());
@@ -239,91 +276,62 @@ var PresenceChannel = /** @class */ (function (_super) {
     PresenceChannel.prototype.setMembers = function (members) {
         this.membersMap = members;
     };
+    /** Someone joined: `fn(MessageType.Subscribe, count, clientId, data)`. */
     PresenceChannel.prototype.subscribe = function (fn) {
         this.opcodes.on(types_1.MessageType.Subscribe, fn);
     };
+    /** The member list changed: `fn(members)`. */
     PresenceChannel.prototype.members = function (fn) {
         this.opcodes.on(types_1.MessageType.ClientsInChannel, fn);
     };
+    /** Someone joined or left: `fn(MessageType.Subscribe | MessageType.Unsubscribe, count, clientId, data?)`. */
     PresenceChannel.prototype.clients = function (fn) {
         this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, fn);
     };
+    /** Someone left: `fn(MessageType.Unsubscribe, count, clientId)`. */
     PresenceChannel.prototype.unsubscribe = function (fn) {
         this.opcodes.on(types_1.MessageType.Unsubscribe, fn);
     };
     PresenceChannel.prototype.clientsCount = function (fn) {
-        this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, function (event, nrOfClients) { return fn(nrOfClients); });
+        this.opcodes.on(types_1.MessageType.Subscribe | types_1.MessageType.Unsubscribe, function (_event, nrOfClients) { return fn(nrOfClients); });
     };
-    PresenceChannel.prototype.clientMessage = function (fn) {
-        this.opcodes.on(types_1.MessageType.ClientMessage, function (data) {
-            var _a = helpers_1.splitn(data, ":", 2), clientId = _a[0], msg = _a[1];
-            fn(clientId, msg);
-        });
-    };
-    PresenceChannel.prototype.dispatch = function (opcode, data) {
-        switch (opcode) {
-            case types_1.MessageType.Subscribe: {
-                var _a = helpers_1.splitn(data, ":", 3), nrOfUsers = _a[0], _b = _a[1], userId = _b === void 0 ? "" : _b, _c = _a[2], userDataStr = _c === void 0 ? "{}" : _c;
-                var parsedUser = JSON.parse(userDataStr);
-                this.addMember(userId, parsedUser);
-                this.opcodes.dispatch(types_1.MessageType.Subscribe, [
-                    types_1.MessageType.Subscribe,
-                    parseInt(nrOfUsers, 10),
-                    userId,
-                    parsedUser,
-                ]);
-                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [
-                    this.getMembers(),
-                ]);
+    PresenceChannel.prototype.handle = function (message) {
+        switch (message.op) {
+            case "joined": {
+                // Wait for member_joined, which says who joined.
                 break;
             }
-            case types_1.MessageType.Unsubscribe: {
-                var _d = helpers_1.splitn("" + data, ":", 2), nrOfUsers = _d[0], userId = _d[1];
-                this.removeMember(userId);
+            case "member_joined": {
+                this.addMember(message.id, message.data);
+                this.opcodes.dispatch(types_1.MessageType.Subscribe, [
+                    types_1.MessageType.Subscribe,
+                    message.count,
+                    message.id,
+                    message.data,
+                ]);
+                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.getMembers()]);
+                break;
+            }
+            case "member_left": {
+                this.removeMember(message.id);
                 this.opcodes.dispatch(types_1.MessageType.Unsubscribe, [
                     types_1.MessageType.Unsubscribe,
-                    parseInt(nrOfUsers, 10),
-                    userId,
+                    message.count,
+                    message.id,
                 ]);
-                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [
-                    this.getMembers(),
-                ]);
+                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.getMembers()]);
                 break;
             }
-            case types_1.MessageType.ClientMessage: {
-                this.messages.dispatchClient(data);
-                this.opcodes.dispatch(types_1.MessageType.ClientMessage, [data]);
-                break;
-            }
-            case types_1.MessageType.ClientsInChannel: {
-                var members = new Map(Object.entries(JSON.parse(data)).map(function (_a) {
-                    var key = _a[0], value = _a[1];
-                    return [key, JSON.parse(value)];
-                }));
-                this.setMembers(members);
-                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [members]);
-                this.opcodes.dispatch(types_1.MessageType.Subscribe, [
-                    types_1.MessageType.Subscribe,
-                    Array.from(this.getMembers().keys()).length,
-                    this.pikoman.getClientId(),
-                    this.me,
-                ]);
+            case "members": {
+                this.setMembers(new Map(Object.entries(message.members)));
+                this.opcodes.dispatch(types_1.MessageType.ClientsInChannel, [this.getMembers()]);
                 break;
             }
             default: {
-                _super.prototype.dispatch.call(this, opcode, data);
+                _super.prototype.handle.call(this, message);
             }
         }
     };
-    PresenceChannel.prototype.send = function (event, data, toAll) {
-        if (toAll === void 0) { toAll = false; }
-        if (data) {
-            this.pikoman.send(types_1.MessageType.ClientMessage + ":" + this.name + ":" + Number(toAll) + ":" + event + ":" + JSON.stringify(data));
-        }
-        else {
-            this.pikoman.send(types_1.MessageType.ClientMessage + ":" + this.name + ":" + Number(toAll) + ":" + event);
-        }
-    };
     return PresenceChannel;
-}(Channel));
+}(PrivateChannel));
 exports.PresenceChannel = PresenceChannel;

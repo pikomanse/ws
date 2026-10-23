@@ -1,5 +1,5 @@
-import { Channel, PresenceChannel } from "./channel";
-import { Authenticator, ConnectionStatus, Fn, Options } from "./types";
+import { Channel, PresenceChannel, PrivateChannel } from "./channel";
+import { Authenticator, ClientMessage, ConnectionStatus, Fn, Options } from "./types";
 export default class Pikoman {
     private readonly appId;
     private clientId;
@@ -21,6 +21,7 @@ export default class Pikoman {
     private rejoin;
     private reconnect;
     private onMessage;
+    /** A new connection id: every channel joins again, with new tokens. */
     private client;
     private onOpen;
     private onClose;
@@ -35,9 +36,11 @@ export default class Pikoman {
     join(fn: Fn): void;
     subscribe(fn: Fn): void;
     isConnected(): boolean;
+    private addChannel;
     listen(channelName: string): Channel;
+    listenPrivate(channelName: string, authenticator?: Authenticator): PrivateChannel;
     listenPresence(channelName: string, authenticator?: Authenticator): PresenceChannel;
     leaveChannel(channelName: string): void;
-    send(data: string): void;
+    send(message: ClientMessage): void;
     clear(): void;
 }

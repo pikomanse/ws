@@ -36,31 +36,81 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.authChannelWithSecret = exports.getHMAC = void 0;
-var js_sha256_1 = require("js-sha256");
-function getHMAC(data, secret) {
-    return js_sha256_1.sha256.hmac(secret, "" + data);
+exports.authChannelWithKey = exports.signToken = exports.importSigningKey = void 0;
+/**
+ * Signs join tokens in the browser, for local experiments only: the private key is in the page,
+ * so anyone can read it. In production, tokens come from the app's backend (HttpAuthenticator).
+ *
+ * A token is a JWT signed with EdDSA (Ed25519): `header.payload.signature`, each part base64url,
+ * the same as any JWT library makes with `alg: "EdDSA"`.
+ */
+function base64UrlEncode(bytes) {
+    var binary = '';
+    bytes.forEach(function (byte) { return binary += String.fromCharCode(byte); });
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-exports.getHMAC = getHMAC;
-function authChannelWithSecret(clientId, channelName, data, secret, permissions) {
+function pemToBytes(pem) {
+    var base64 = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\s+/g, '');
+    var binary = atob(base64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+/** Imports a PKCS#8 PEM private key, as printed by `pikoman_admin gen-app`. */
+function importSigningKey(privateKeyPem) {
+    return crypto.subtle.importKey('pkcs8', pemToBytes(privateKeyPem), { name: 'Ed25519' }, false, ['sign']);
+}
+exports.importSigningKey = importSigningKey;
+var encodeJson = function (value) { return base64UrlEncode(new TextEncoder().encode(JSON.stringify(value))); };
+function signToken(payload, signingKey) {
+    return __awaiter(this, void 0, void 0, function () {
+        var signed, signature;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    signed = encodeJson({ alg: 'EdDSA', typ: 'JWT' }) + "." + encodeJson(payload);
+                    return [4 /*yield*/, crypto.subtle.sign({ name: 'Ed25519' }, signingKey, new TextEncoder().encode(signed))];
+                case 1:
+                    signature = _a.sent();
+                    return [2 /*return*/, signed + "." + base64UrlEncode(new Uint8Array(signature))];
+            }
+        });
+    });
+}
+exports.signToken = signToken;
+function authChannelWithKey(clientId, channelName, data, signingKey, permissions, lifetimeSeconds) {
     if (permissions === void 0) { permissions = 0; }
-    var strData = JSON.stringify(data);
-    var s = clientId + ":" + channelName + ":" + permissions + ":" + strData;
-    var hmac = getHMAC(s, secret);
-    return channelName + ":" + hmac + ":" + permissions + ":" + strData;
+    if (lifetimeSeconds === void 0) { lifetimeSeconds = 300; }
+    return signToken({
+        connection: clientId,
+        channel: channelName,
+        access: permissions,
+        data: data,
+        exp: Math.floor(Date.now() / 1000) + lifetimeSeconds,
+    }, signingKey);
 }
-exports.authChannelWithSecret = authChannelWithSecret;
+exports.authChannelWithKey = authChannelWithKey;
 var OfflineAuthenticator = /** @class */ (function () {
-    function OfflineAuthenticator(data, secret, permissions) {
+    /** `privateKey` is a PKCS#8 PEM string or an imported Ed25519 CryptoKey. */
+    function OfflineAuthenticator(data, privateKey, permissions) {
         this.data = data;
-        this.secret = secret;
+        this.signingKey = typeof privateKey === 'string' ? importSigningKey(privateKey) : Promise.resolve(privateKey);
         this.permissions = permissions;
     }
     OfflineAuthenticator.prototype.authenticate = function (clientId, channelName, _options) {
         if (_options === void 0) { _options = {}; }
         return __awaiter(this, void 0, void 0, function () {
-            return __generator(this, function (_a) {
-                return [2 /*return*/, '2:' + authChannelWithSecret(clientId, channelName, this.data, this.secret, this.permissions)];
+            var _a, _b;
+            return __generator(this, function (_c) {
+                switch (_c.label) {
+                    case 0:
+                        _a = authChannelWithKey;
+                        _b = [clientId, channelName, this.data];
+                        return [4 /*yield*/, this.signingKey];
+                    case 1: return [2 /*return*/, _a.apply(void 0, _b.concat([_c.sent(), this.permissions]))];
+                }
             });
         });
     };

@@ -11,7 +11,8 @@ import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
 
 const defaultOptions: Options = {
-	ws_address: "wss://ws.pikoman.se",
+	// 2.0 runs on next.pikoman.se until ws.pikoman.se switches over; 1.0.0 goes back to ws.pikoman.se.
+	ws_address: "wss://next.pikoman.se",
 };
 export default class Pikoman {
 	private readonly appId: string;

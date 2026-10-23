@@ -5,22 +5,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StringEventsListener = void 0;
 var topics_1 = __importDefault(require("../topics"));
-var helpers_1 = require("../helpers");
 var EventsListener = /** @class */ (function () {
     function EventsListener(context) {
         this.topics = new topics_1.default(context);
     }
-    EventsListener.prototype.dispatch = function (data) {
-        if (data.length === 0) {
-            return;
-        }
-        var _a = helpers_1.splitn(data, ":", 2), eventName = _a[0], rest = _a[1];
-        try {
-            this.topics.dispatch(eventName, JSON.parse(rest));
-        }
-        catch (e) {
-            console.error("EventsListener couldn't parse data as JSON");
-        }
+    EventsListener.prototype.dispatch = function (event, data) {
+        this.topics.dispatch(event, data);
     };
     EventsListener.prototype.on = function (topic, fn) {
         this.topics.on(topic, fn);
@@ -31,16 +21,13 @@ var EventsListener = /** @class */ (function () {
     return EventsListener;
 }());
 exports.default = EventsListener;
+/** Like EventsListener, but always hands the data over as a string. */
 var StringEventsListener = /** @class */ (function () {
     function StringEventsListener(context) {
         this.topics = new topics_1.default(context);
     }
-    StringEventsListener.prototype.dispatch = function (data) {
-        if (data.length === 0) {
-            return;
-        }
-        var _a = helpers_1.splitn(data, ":", 2), eventName = _a[0], rest = _a[1];
-        this.topics.dispatch(eventName, rest);
+    StringEventsListener.prototype.dispatch = function (event, data) {
+        this.topics.dispatch(event, typeof data === 'string' ? data : JSON.stringify(data));
     };
     StringEventsListener.prototype.on = function (topic, fn) {
         this.topics.on(topic, fn);

@@ -1,6 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ConnectionStatus = exports.MessageType = void 0;
+/**
+ * Kinds of callbacks a channel can dispatch. They are bit flags, so one callback can listen to
+ * several (`Subscribe | Unsubscribe`). Since 1.0 they are not sent over the wire: the protocol
+ * is JSON, see `ServerMessage`.
+ */
 var MessageType;
 (function (MessageType) {
     MessageType[MessageType["Connection"] = 0] = "Connection";
@@ -9,8 +14,9 @@ var MessageType;
     MessageType[MessageType["Unsubscribe"] = 4] = "Unsubscribe";
     MessageType[MessageType["ClientMessage"] = 8] = "ClientMessage";
     MessageType[MessageType["ClientsInChannel"] = 16] = "ClientsInChannel";
+    MessageType[MessageType["Refused"] = 32] = "Refused";
     MessageType[MessageType["Ping"] = 64] = "Ping";
-    MessageType[MessageType["Unknown"] = 65] = "Unknown";
+    MessageType[MessageType["Unknown"] = 128] = "Unknown";
 })(MessageType = exports.MessageType || (exports.MessageType = {}));
 var ConnectionStatus;
 (function (ConnectionStatus) {

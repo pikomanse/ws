@@ -1,7 +1,7 @@
 {
 	"name": "@pikoman/ws",
 	"author": "Christoffer Lantz <christoffer.lantz@filmskaparna.se>",
-	"version": "1.0.0",
+	"version": "1.0.0-rc.1",
 	"license": "MIT",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
@@ -13,7 +13,9 @@
 		"test": "jest",
 		"build": "tsc && webpack"
 	},
-	"files": ["dist/**/*"],
+	"files": [
+		"dist/**/*"
+	],
 	"devDependencies": {
 		"@babel/core": "^7.14.8",
 		"@babel/plugin-transform-runtime": "^7.14.5",
@@ -26,10 +28,10 @@
 		"sinon": "^10.0.0",
 		"ts-loader": "^9.2.3",
 		"webpack": "^5.98.0",
-		"webpack-cli": "^6.0.1"
-	},
-	"dependencies": {
+		"webpack-cli": "^6.0.1",
 		"typescript": "^4.3.5"
 	},
-	"keywords": ["websocket"]
+	"keywords": [
+		"websocket"
+	]
 }

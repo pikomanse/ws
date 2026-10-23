@@ -9,8 +9,8 @@ var AllListener = /** @class */ (function () {
         this.topic = 'all';
         this.topics = new topics_1.default(context);
     }
-    AllListener.prototype.dispatch = function (data) {
-        this.topics.dispatch(this.topic, data);
+    AllListener.prototype.dispatch = function (event, data) {
+        this.topics.dispatch(this.topic, event, data);
     };
     AllListener.prototype.on = function (_topic, fn) {
         this.topics.on(this.topic, fn);

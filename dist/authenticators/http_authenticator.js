@@ -36,6 +36,10 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+/**
+ * Asks the app's backend for a join token: `GET {auth_url}/{clientId}-{channelName}`, which
+ * answers `{"token": "..."}`.
+ */
 var Http_authenticator = /** @class */ (function () {
     function Http_authenticator() {
     }
@@ -64,10 +68,10 @@ var Http_authenticator = /** @class */ (function () {
                         return [4 /*yield*/, request.json()];
                     case 2:
                         response = _a.sent();
-                        if (!response.auth) {
-                            throw new Error('No auth in response');
+                        if (!response.token) {
+                            throw new Error('No token in response');
                         }
-                        return [2 /*return*/, response.auth];
+                        return [2 /*return*/, response.token];
                 }
             });
         });
