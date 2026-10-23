@@ -19,6 +19,11 @@ export default class Pikoman {
     getAuthUrl(): string | undefined;
     private getAppWsUrl;
     private rejoin;
+    /**
+     * Closes the socket without the usual "lost the connection" handling, whose 5 s reconnect would
+     * otherwise run when a page comes back from the back/forward cache.
+     */
+    private closeQuietly;
     private reconnect;
     private onMessage;
     /** A new connection id: every channel joins again, with new tokens. */

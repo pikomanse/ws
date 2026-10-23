@@ -37,6 +37,16 @@ export default class Pikoman {
 		this.sendPing = this.sendPing.bind(this);
 		this.onOffline = this.onOffline.bind(this);
 		this.bindWebSocket(this.ws);
+		// Leaving the page (a link, the back button) can keep it in the browser's back/forward cache
+		// with the socket open, so presence channels would still count this visitor until the server
+		// drops the silent connection. Close it on the way out, and connect again at once if the page
+		// is shown from that cache. Switching tabs fires neither.
+		if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+			window.addEventListener("pagehide", () => this.closeQuietly());
+			window.addEventListener("pageshow", (event) => {
+				if ((event as PageTransitionEvent).persisted) this.reconnect(0);
+			});
+		}
 	}
 
 	private bindWebSocket(ws: WebSocket) {
@@ -73,7 +83,22 @@ export default class Pikoman {
 		this.channels.forEach((channel) => channel.join());
 	}
 
-	private reconnect() {
+	/**
+	 * Closes the socket without the usual "lost the connection" handling, whose 5 s reconnect would
+	 * otherwise run when a page comes back from the back/forward cache.
+	 */
+	private closeQuietly() {
+		clearTimeout(this.timeoutOffline);
+		clearTimeout(this.timeoutSendPing);
+		clearTimeout(this.timeoutReconnect);
+		this.ws.onclose = null;
+		this.ws.onerror = null;
+		this.ws.close();
+		this.status = ConnectionStatus.Offline;
+		this.clientId = "";
+	}
+
+	private reconnect(delay = 5000) {
 		this.ws.close();
 		clearTimeout(this.timeoutReconnect);
 		this.timeoutReconnect = setTimeout(() => {
@@ -83,8 +108,8 @@ export default class Pikoman {
 				this.bindWebSocket(ws);
 				this.clearOfflineTimeout();
 			};
-			ws.onerror = this.reconnect.bind(this);
-		}, 5000);
+			ws.onerror = () => this.reconnect();
+		}, delay);
 	}
 
 	private onMessage({ data }: { data: string }) {

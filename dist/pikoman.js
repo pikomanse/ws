@@ -26,6 +26,7 @@ var defaultOptions = {
 };
 var Pikoman = /** @class */ (function () {
     function Pikoman(appId, options) {
+        var _this = this;
         if (options === void 0) { options = defaultOptions; }
         this.clientId = "";
         this.timeoutOffline = 0;
@@ -42,6 +43,17 @@ var Pikoman = /** @class */ (function () {
         this.sendPing = this.sendPing.bind(this);
         this.onOffline = this.onOffline.bind(this);
         this.bindWebSocket(this.ws);
+        // Leaving the page (a link, the back button) can keep it in the browser's back/forward cache
+        // with the socket open, so presence channels would still count this visitor until the server
+        // drops the silent connection. Close it on the way out, and connect again at once if the page
+        // is shown from that cache. Switching tabs fires neither.
+        if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+            window.addEventListener("pagehide", function () { return _this.closeQuietly(); });
+            window.addEventListener("pageshow", function (event) {
+                if (event.persisted)
+                    _this.reconnect(0);
+            });
+        }
     }
     Pikoman.prototype.bindWebSocket = function (ws) {
         ws.onopen = this.onOpen.bind(this);
@@ -70,8 +82,23 @@ var Pikoman = /** @class */ (function () {
     Pikoman.prototype.rejoin = function () {
         this.channels.forEach(function (channel) { return channel.join(); });
     };
-    Pikoman.prototype.reconnect = function () {
+    /**
+     * Closes the socket without the usual "lost the connection" handling, whose 5 s reconnect would
+     * otherwise run when a page comes back from the back/forward cache.
+     */
+    Pikoman.prototype.closeQuietly = function () {
+        clearTimeout(this.timeoutOffline);
+        clearTimeout(this.timeoutSendPing);
+        clearTimeout(this.timeoutReconnect);
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.close();
+        this.status = types_1.ConnectionStatus.Offline;
+        this.clientId = "";
+    };
+    Pikoman.prototype.reconnect = function (delay) {
         var _this = this;
+        if (delay === void 0) { delay = 5000; }
         this.ws.close();
         clearTimeout(this.timeoutReconnect);
         this.timeoutReconnect = setTimeout(function () {
@@ -81,8 +108,8 @@ var Pikoman = /** @class */ (function () {
                 _this.bindWebSocket(ws);
                 _this.clearOfflineTimeout();
             };
-            ws.onerror = _this.reconnect.bind(_this);
-        }, 5000);
+            ws.onerror = function () { return _this.reconnect(); };
+        }, delay);
     };
     Pikoman.prototype.onMessage = function (_a) {
         var data = _a.data;
