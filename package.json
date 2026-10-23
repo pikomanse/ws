@@ -11,7 +11,9 @@
 	},
 	"scripts": {
 		"test": "jest",
-		"build": "tsc && webpack"
+		"clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+		"build": "npm run clean && tsc && webpack",
+		"prepublishOnly": "npm test && npm run build"
 	},
 	"files": [
 		"dist/**/*"
