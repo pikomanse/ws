@@ -4,8 +4,8 @@ import {Authenticator} from "../types";
  * Signs join tokens in the browser, for local experiments only: the private key is in the page,
  * so anyone can read it. In production, tokens come from the app's backend (HttpAuthenticator).
  *
- * A token is `base64url(payload JSON).base64url(Ed25519 signature of the first part)`, the same
- * format a backend makes with Node's `crypto.sign` or PHP's `sodium_crypto_sign_detached`.
+ * A token is a JWT signed with EdDSA (Ed25519): `header.payload.signature`, each part base64url,
+ * the same as any JWT library makes with `alg: "EdDSA"`.
  */
 
 function base64UrlEncode(bytes: Uint8Array): string {
@@ -29,10 +29,12 @@ export function importSigningKey(privateKeyPem: string): Promise<CryptoKey> {
     return crypto.subtle.importKey('pkcs8', pemToBytes(privateKeyPem), {name: 'Ed25519'}, false, ['sign']);
 }
 
+const encodeJson = (value: object) => base64UrlEncode(new TextEncoder().encode(JSON.stringify(value)));
+
 export async function signToken(payload: object, signingKey: CryptoKey): Promise<string> {
-    const encodedPayload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
-    const signature = await crypto.subtle.sign({name: 'Ed25519'}, signingKey, new TextEncoder().encode(encodedPayload));
-    return `${encodedPayload}.${base64UrlEncode(new Uint8Array(signature))}`;
+    const signed = `${encodeJson({alg: 'EdDSA', typ: 'JWT'})}.${encodeJson(payload)}`;
+    const signature = await crypto.subtle.sign({name: 'Ed25519'}, signingKey, new TextEncoder().encode(signed));
+    return `${signed}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
 export function authChannelWithKey(clientId: string, channelName: string, data: any, signingKey: CryptoKey, permissions = 0, lifetimeSeconds = 300): Promise<string> {
@@ -41,7 +43,7 @@ export function authChannelWithKey(clientId: string, channelName: string, data: 
         channel: channelName,
         access: permissions,
         data,
-        expires: Math.floor(Date.now() / 1000) + lifetimeSeconds,
+        exp: Math.floor(Date.now() / 1000) + lifetimeSeconds,
     }, signingKey);
 }
 

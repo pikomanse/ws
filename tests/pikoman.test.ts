@@ -28,11 +28,12 @@ describe(`OfflineAuthenticator`, () => {
     it(`Should sign a token the server can verify`, async () => {
         const authenticator = new OfflineAuthenticator({name: 'Anna'}, TEST_PEM, 3);
         const token = await authenticator.authenticate('c_1', 'presence-room');
-        const [payload, signature] = token.split('.');
+        const [header, payload, signature] = token.split('.');
 
+        expect(decode(header)).toEqual({alg: 'EdDSA', typ: 'JWT'});
         const claims = decode(payload);
         expect(claims).toMatchObject({connection: 'c_1', channel: 'presence-room', access: 3, data: {name: 'Anna'}});
-        expect(claims.expires).toBeGreaterThan(Date.now() / 1000);
+        expect(claims.exp).toBeGreaterThan(Date.now() / 1000);
 
         const publicKey = webcrypto.subtle.importKey(
             'raw',
@@ -46,7 +47,7 @@ describe(`OfflineAuthenticator`, () => {
             {name: 'Ed25519'},
             await publicKey,
             Buffer.from(signature, 'base64url'),
-            new TextEncoder().encode(payload),
+            new TextEncoder().encode(`${header}.${payload}`),
         );
         expect(valid).toBe(true);
     });
@@ -55,7 +56,7 @@ describe(`OfflineAuthenticator`, () => {
         const key = await importSigningKey(TEST_PEM);
         const first = await signToken({a: 1}, key);
         const second = await signToken({a: 2}, key);
-        expect(first.split('.')[1]).not.toEqual(second.split('.')[1]);
+        expect(first.split('.')[2]).not.toEqual(second.split('.')[2]);
     });
 });
 
