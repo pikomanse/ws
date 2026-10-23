@@ -1,6 +1,5 @@
 import Topics from "../topics";
 import {Fn, Listener} from "../types";
-import {splitn} from "../helpers";
 
 export default class EventsListener implements Listener {
     private topics;
@@ -9,16 +8,8 @@ export default class EventsListener implements Listener {
         this.topics = new Topics(context);
     }
 
-    dispatch(data: string): void {
-        if (data.length === 0) {
-            return;
-        }
-        const [eventName, rest] = splitn(data, ":", 2);
-        try {
-            this.topics.dispatch(eventName, JSON.parse(rest));
-        } catch (e) {
-            console.error(`EventsListener couldn't parse data as JSON`)
-        }
+    dispatch(event: string, data: any): void {
+        this.topics.dispatch(event, data);
     }
 
     on(topic: string, fn: Fn): void {
@@ -30,6 +21,7 @@ export default class EventsListener implements Listener {
     }
 }
 
+/** Like EventsListener, but always hands the data over as a string. */
 export class StringEventsListener implements Listener {
     private topics;
 
@@ -37,12 +29,8 @@ export class StringEventsListener implements Listener {
         this.topics = new Topics(context);
     }
 
-    dispatch(data: string): void {
-        if (data.length === 0) {
-            return;
-        }
-        const [eventName, rest] = splitn(data, ":", 2);
-        this.topics.dispatch(eventName, rest);
+    dispatch(event: string, data: any): void {
+        this.topics.dispatch(event, typeof data === 'string' ? data : JSON.stringify(data));
     }
 
     on(topic: string, fn: Fn): void {

@@ -9,8 +9,8 @@ export default class AllListener implements Listener {
         this.topics = new Topics(context);
     }
 
-    dispatch(data: string): void {
-        this.topics.dispatch(this.topic, data);
+    dispatch(event: string, data: any): void {
+        this.topics.dispatch(this.topic, event, data);
     }
 
     on(_topic: string, fn: Fn): void {

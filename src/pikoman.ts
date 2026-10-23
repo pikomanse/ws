@@ -1,11 +1,11 @@
-import { Channel, PresenceChannel } from "./channel";
-import { splitn } from "./helpers";
+import { Channel, PresenceChannel, PrivateChannel } from "./channel";
 import {
 	Authenticator,
+	ClientMessage,
 	ConnectionStatus,
 	Fn,
-	MessageType,
 	Options,
+	ServerMessage,
 } from "./types";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
@@ -81,30 +81,47 @@ export default class Pikoman {
 				this.ws = ws;
 				this.bindWebSocket(ws);
 				this.clearOfflineTimeout();
-				this.rejoin();
 			};
 			ws.onerror = this.reconnect.bind(this);
 		}, 5000);
 	}
 
 	private onMessage({ data }: { data: string }) {
-		const [opcodeStr, second, rest] = splitn(data, ":", 3);
-		const opcode = parseInt(opcodeStr, 10);
+		let message: ServerMessage;
+		try {
+			message = JSON.parse(data);
+		} catch (e) {
+			console.error("Pikoman: could not read message from server");
+			return;
+		}
 		this.clearOfflineTimeout();
-		switch (opcode) {
-			case MessageType.Connection: {
-				this.client(second);
+		switch (message.op) {
+			case "connected": {
+				this.client(message.id);
+				break;
+			}
+			case "pong": {
+				break;
+			}
+			case "error": {
+				const channel = message.channel ? this.channels.get(message.channel) : undefined;
+				if (channel) {
+					channel.handleError(message.code);
+				} else {
+					console.error(`Pikoman: ${message.code}`);
+				}
 				break;
 			}
 			default: {
-				const channel = this.channels.get(second);
+				const channel = this.channels.get(message.channel);
 				if (channel) {
-					channel.dispatch(opcode, rest);
+					channel.handle(message);
 				}
 			}
 		}
 	}
 
+	/** A new connection id: every channel joins again, with new tokens. */
 	private client(clientId: string) {
 		this.clientId = clientId;
 		this.messages.dispatch(ConnectionStatus.Online, [true]);
@@ -118,6 +135,7 @@ export default class Pikoman {
 
 	private onClose(...data: any[]) {
 		this.status = ConnectionStatus.Offline;
+		this.clientId = "";
 		this.messages.dispatch(ConnectionStatus.Offline, [false, ...data]);
 		this.reconnect();
 	}
@@ -134,7 +152,7 @@ export default class Pikoman {
 	}
 
 	private sendPing() {
-		this.send(`64:${new Date().getTime()}`);
+		this.send({ op: "ping" });
 	}
 
 	getClientId(): string {
@@ -180,22 +198,44 @@ export default class Pikoman {
 		return this.ws.readyState === WebSocket.OPEN && this.clientId !== "";
 	}
 
+	private addChannel<T extends Channel>(channelName: string, create: () => T): T {
+		const existingChannel = this.channels.get(channelName);
+		if (existingChannel) {
+			return existingChannel as T;
+		}
+		const channel = create();
+		this.channels.set(channelName, channel);
+		if (this.isConnected()) {
+			channel.join();
+		}
+		return channel;
+	}
+
 	listen(channelName: string): Channel {
 		if (channelName.startsWith("presence-")) {
 			throw new Error(
 				`Presence channels should be listened to using the listenPresence method`,
 			);
 		}
-		const existingChannel = this.channels.get(channelName);
-		if (existingChannel) {
-			return existingChannel;
+		if (channelName.startsWith("private-")) {
+			throw new Error(
+				`Private channels should be listened to using the listenPrivate method`,
+			);
 		}
-		const channel = new Channel(channelName, this);
-		this.channels.set(channelName, channel);
-		if (this.isConnected()) {
-			channel.join();
+		return this.addChannel(channelName, () => new Channel(channelName, this));
+	}
+
+	listenPrivate(
+		channelName: string,
+		authenticator: Authenticator = new HttpAuthenticator(),
+	): PrivateChannel {
+		if (!channelName.startsWith("private-")) {
+			throw new Error(`Private channels must start with prefix private-`);
 		}
-		return channel;
+		return this.addChannel(
+			channelName,
+			() => new PrivateChannel(channelName, this, authenticator),
+		);
 	}
 
 	listenPresence(
@@ -205,16 +245,10 @@ export default class Pikoman {
 		if (!channelName.startsWith("presence-")) {
 			throw new Error(`Presence channels must start with prefix presence`);
 		}
-		const existingChannel = this.channels.get(channelName);
-		if (existingChannel) {
-			return existingChannel as PresenceChannel;
-		}
-		const channel = new PresenceChannel(channelName, this, authenticator);
-		this.channels.set(channelName, channel);
-		if (this.isConnected()) {
-			channel.join();
-		}
-		return channel;
+		return this.addChannel(
+			channelName,
+			() => new PresenceChannel(channelName, this, authenticator),
+		);
 	}
 
 	leaveChannel(channelName: string) {
@@ -226,9 +260,9 @@ export default class Pikoman {
 		}
 	}
 
-	send(data: string) {
+	send(message: ClientMessage) {
 		if (this.isConnected()) {
-			this.ws.send(data);
+			this.ws.send(JSON.stringify(message));
 		}
 	}
 
@@ -237,4 +271,3 @@ export default class Pikoman {
 		this.channels.clear();
 	}
 }
-

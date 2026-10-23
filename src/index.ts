@@ -1,22 +1,38 @@
 import Pikoman from './pikoman';
-import {Channel, PresenceChannel} from "./channel";
+import {AllEvents, Channel, EventsHandler, PresenceChannel, PrivateChannel} from "./channel";
 import {AllListener, EventsListener, StringEventsListener} from "./listeners";
-import {MessageType, ConnectionStatus, SendData as SendDataType, Authenticator, Options} from './types';
+import {
+    MessageType,
+    ConnectionStatus,
+    SendData as SendDataType,
+    Authenticator,
+    Options,
+    ClientMessage,
+    ServerMessage,
+    ErrorCode,
+} from './types';
 import {OfflineAuthenticator, HttpAuthenticator} from './authenticators';
+import {importSigningKey, signToken} from './authenticators/offline_authenticator';
 
 export {
     Channel,
+    PrivateChannel,
     PresenceChannel,
+    EventsHandler,
+    AllEvents,
     MessageType,
     ConnectionStatus,
     Authenticator,
     Options,
     HttpAuthenticator,
     OfflineAuthenticator,
+    importSigningKey,
+    signToken,
     AllListener,
     EventsListener,
     StringEventsListener,
     Pikoman
 };
 export type SendData = SendDataType;
+export type {ClientMessage, ServerMessage, ErrorCode};
 export default Pikoman;

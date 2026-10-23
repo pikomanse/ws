@@ -1,5 +1,9 @@
 import {Authenticator, Options} from "../types";
 
+/**
+ * Asks the app's backend for a join token: `GET {auth_url}/{clientId}-{channelName}`, which
+ * answers `{"token": "..."}`.
+ */
 export default class Http_authenticator implements Authenticator {
     private getAuthUrl(clientId: string, channelName: string, options: Options): string {
         if (!channelName) {
@@ -18,10 +22,10 @@ export default class Http_authenticator implements Authenticator {
             throw new Error('Request was not successful');
         }
         const response = await request.json();
-        if (!response.auth) {
-            throw new Error('No auth in response');
+        if (!response.token) {
+            throw new Error('No token in response');
         }
-        return response.auth;
+        return response.token;
     }
 
 }

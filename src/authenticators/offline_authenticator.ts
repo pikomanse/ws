@@ -1,29 +1,63 @@
-import {sha256} from "js-sha256";
 import {Authenticator} from "../types";
 
-export function getHMAC(data: string, secret: string): string {
-    return sha256.hmac(secret, `${data}`);
+/**
+ * Signs join tokens in the browser, for local experiments only: the private key is in the page,
+ * so anyone can read it. In production, tokens come from the app's backend (HttpAuthenticator).
+ *
+ * A token is `base64url(payload JSON).base64url(Ed25519 signature of the first part)`, the same
+ * format a backend makes with Node's `crypto.sign` or PHP's `sodium_crypto_sign_detached`.
+ */
+
+function base64UrlEncode(bytes: Uint8Array): string {
+    let binary = '';
+    bytes.forEach(byte => binary += String.fromCharCode(byte));
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function authChannelWithSecret(clientId: string, channelName: string, data: any, secret: string, permissions = 0): string {
-    const strData = JSON.stringify(data);
-    const s = `${clientId}:${channelName}:${permissions}:${strData}`;
-    const hmac = getHMAC(s, secret);
-    return `${channelName}:${hmac}:${permissions}:${strData}`;
+function pemToBytes(pem: string): Uint8Array {
+    const base64 = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\s+/g, '');
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+/** Imports a PKCS#8 PEM private key, as printed by `pikoman_admin gen-app`. */
+export function importSigningKey(privateKeyPem: string): Promise<CryptoKey> {
+    return crypto.subtle.importKey('pkcs8', pemToBytes(privateKeyPem), {name: 'Ed25519'}, false, ['sign']);
+}
+
+export async function signToken(payload: object, signingKey: CryptoKey): Promise<string> {
+    const encodedPayload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
+    const signature = await crypto.subtle.sign({name: 'Ed25519'}, signingKey, new TextEncoder().encode(encodedPayload));
+    return `${encodedPayload}.${base64UrlEncode(new Uint8Array(signature))}`;
+}
+
+export function authChannelWithKey(clientId: string, channelName: string, data: any, signingKey: CryptoKey, permissions = 0, lifetimeSeconds = 300): Promise<string> {
+    return signToken({
+        connection: clientId,
+        channel: channelName,
+        access: permissions,
+        data,
+        expires: Math.floor(Date.now() / 1000) + lifetimeSeconds,
+    }, signingKey);
 }
 
 export default class OfflineAuthenticator implements Authenticator {
     private readonly data: any;
-    private readonly secret: string;
+    private readonly signingKey: Promise<CryptoKey>;
     private readonly permissions: number;
 
-    constructor(data: any, secret: string, permissions: number) {
+    /** `privateKey` is a PKCS#8 PEM string or an imported Ed25519 CryptoKey. */
+    constructor(data: any, privateKey: string | CryptoKey, permissions: number) {
         this.data = data;
-        this.secret = secret;
+        this.signingKey = typeof privateKey === 'string' ? importSigningKey(privateKey) : Promise.resolve(privateKey);
         this.permissions = permissions;
     }
 
     async authenticate(clientId: string, channelName: string, _options = {}): Promise<string> {
-        return '2:' + authChannelWithSecret(clientId, channelName, this.data, this.secret, this.permissions);
+        return authChannelWithKey(clientId, channelName, this.data, await this.signingKey, this.permissions);
     }
 }
