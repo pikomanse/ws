@@ -46,8 +46,8 @@ curl -u app-yourapp:$PIKOMAN_API_KEY -d '{"id": 1042}' https://next-api.pikoman.
 ## Join tokens
 
 Your backend signs an EdDSA JWT with the app's private key, for one connection and one channel,
-valid for at most 10 minutes. Examples for Node and PHP are on the
-[Protocol 2.0](https://pikoman.se/docs/v2/) page. The private key never goes in frontend code.
+valid for at most 10 minutes. Endpoints for Node and PHP are in the
+[quickstart](https://pikoman.se/docs/#token). The private key never goes in frontend code.
 
 ## License
 
