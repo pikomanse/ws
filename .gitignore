@@ -3,3 +3,5 @@ node_modules
 build
 .gradle
 cmake-build-debug
+# Build output: made by npm run build, shipped to npm through "files", never committed.
+dist
