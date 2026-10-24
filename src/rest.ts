@@ -3,8 +3,8 @@
  * the page. Requests carry `Authorization: Bearer <jwt>` signed with an API key (KEYS.md).
  */
 import {KeyWithId, requestToken, startSecretImport} from './keys';
-import {encryptEvent, isEncryptedChannel, channelKey, startMasterKeyImport} from './encryption';
-import {INSPECT} from './redact';
+import {encryptEvent, eventJson, isEncryptedChannel, channelKey, startMasterKeyImport} from './encryption';
+import {INSPECT, refuseInBrowser} from './redact';
 
 export const DEFAULT_API_ADDRESS = 'https://next-api.pikoman.se';
 
@@ -46,6 +46,7 @@ export class Rest {
     private readonly address: string;
 
     constructor(options: RestOptions = {}) {
+        refuseInBrowser('Rest');
         const app = options.app ?? env('PIKOMAN_APP');
         const apiKey = options.apiKey ?? env('PIKOMAN_API_KEY');
         if (!app) {
@@ -100,11 +101,23 @@ export class Rest {
             }
             body = await encryptEvent(channel, event, body, await channelKey(await masterKey, channel), 'server');
         }
-        const response = await fetch(`${this.address}/${encodeURIComponent(channel)}/${encodeURIComponent(event)}`, {
+        const url = `${this.address}/${encodeURIComponent(channel)}/${encodeURIComponent(event)}`;
+        const json = eventJson(body);
+        const post = async () => fetch(url, {
             method: 'POST',
             headers: {'Authorization': await this.authorization(), 'Content-Type': 'application/json'},
-            body: JSON.stringify(body),
+            body: json,
         });
+        let response = await post();
+        if (response.status === 401) {
+            // The cached token was refused (a clock that moved, a key that changed): never reuse it.
+            // One more try with a fresh token; a second 401 is the answer.
+            this.secret.token = undefined;
+            response = await post();
+            if (response.status === 401) {
+                this.secret.token = undefined;
+            }
+        }
         if (!response.ok) {
             let reason = '';
             try {

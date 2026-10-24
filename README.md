@@ -58,8 +58,11 @@ await rest.publish("orders", "order-shipped", { id: 1042 });
 
 Each request carries `Authorization: Bearer <jwt>`: an EdDSA JWT with `kid` (the key id) in the
 header and `iss` (the app id), `iat` and `exp` (at most 10 minutes) as claims. `Rest` makes one
-that lives five minutes and reuses it for four. For other requests (stats, clients, disconnect),
-make the header yourself:
+that lives five minutes and reuses it for four; a token the server refuses with 401 is dropped and
+the request tried once more with a fresh one. Data with no JSON form (a function, a symbol) is
+refused; `undefined` is sent as `null`. `Rest`, `OfflineAuthenticator.fromSecret` and
+`MasterKeyAuthenticator` refuse to run in a browser page: what holds a secret key belongs on a
+server. For other requests (stats, clients, disconnect), make the header yourself:
 
 ```js
 import { authorizationHeader } from "@pikoman/ws";
@@ -70,7 +73,8 @@ const res = await fetch("https://next-api.pikoman.se/orders/stats", {
 ```
 
 `requestToken(apiKey, appId, lifetimeSeconds = 300)` gives the JWT alone. Both take the `sk_` secret
-or `{ keyId, key }` with an imported key.
+or `{ keyId, key }` with an imported key; without `keyId` they throw, since the server finds the key
+by the `kid`. Lifetimes of request and join tokens are whole seconds (rounded down), at most 600.
 
 ## Join tokens
 
@@ -105,7 +109,7 @@ and gives each client the key for the channels it is let into.
 // Browser: join as with private channels. Events arrive decrypted; send encrypts.
 const secret = pikoman.listenPrivate("private-encrypted-team-7");
 secret.on("message", (data) => console.log(data.text));
-secret.send("message", { text: "hej" });
+await secret.send("message", { text: "hej" });  // rejects if offline: nothing was sent
 secret.refused((code) => console.warn(code));  // "decrypt_failed": a message was dropped
 ```
 

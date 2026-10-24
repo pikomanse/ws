@@ -1,6 +1,6 @@
 import Pikoman from "./pikoman";
 import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, MessageType } from "./types";
-import { decryptEvent, encryptEvent, importChannelKey } from "./encryption";
+import { decryptEvent, encryptEvent, eventJson, importChannelKey } from "./encryption";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
 import Topics from "./topics";
@@ -217,8 +217,12 @@ export class PrivateChannel extends Channel {
 		super.handle(message);
 	}
 
-	/** `toAll` also delivers the event to this connection. */
+	/**
+	 * `toAll` also delivers the event to this connection. Throws for data with no JSON form (a
+	 * function, a symbol); `undefined` is sent as `null`.
+	 */
 	send(event: string, data?: any, toAll = false) {
+		eventJson(data);
 		this.pikoman.send({
 			op: "send",
 			channel: this.name,
@@ -391,20 +395,24 @@ export class EncryptedChannel extends PrivateChannel {
 
 	/**
 	 * Encrypts and sends a client event. `toAll` also delivers it to this connection. The promise
-	 * settles once it is handed to the socket; it rejects if there is no channel key yet.
+	 * settles once it is handed to the socket; it rejects if there is no channel key yet, if the
+	 * connection is offline (nothing was sent), or if the data has no JSON form.
 	 */
 	send(event: string, data?: any, toAll = false): Promise<void> {
 		const sent = this.outgoing.then(async () => {
 			if (!this.key) {
 				throw new Error(`No channel key for ${this.name} yet`);
 			}
-			this.pikoman.send({
+			const handed = this.pikoman.send({
 				op: "send",
 				channel: this.name,
 				event,
 				data: await encryptEvent(this.name, event, data, await this.key, "client"),
 				echo: toAll,
 			});
+			if (!handed) {
+				throw new Error(`Not connected: nothing was sent to ${this.name}`);
+			}
 		});
 		this.outgoing = sent.catch(() => undefined);
 		return sent;

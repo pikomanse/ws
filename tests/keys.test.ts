@@ -3,7 +3,9 @@
  */
 import {createPrivateKey, createPublicKey, webcrypto} from 'crypto';
 import {
+    MasterKeyAuthenticator,
     OfflineAuthenticator,
+    importSecret,
     parseSecret,
     requestToken,
     authorizationHeader,
@@ -12,6 +14,7 @@ import {
     decryptEvent,
 } from '../src';
 import {installWebGlobals} from './web_globals';
+import {authChannelWithKey} from '../src/authenticators/offline_authenticator';
 
 // Test keys only: the seed of sevens, as in the server's tests. Never used for a real app.
 const SEED = Buffer.alloc(32, 7);
@@ -108,6 +111,23 @@ describe('Request tokens', () => {
         await expect(requestToken(SECRET, '')).rejects.toThrow();
     });
 
+    it('Should live whole seconds only', async () => {
+        const claims = decode((await requestToken(SECRET, 'app-test', 299.9)).split('.')[1]);
+        expect(claims.exp - claims.iat).toBe(299);
+        expect(Number.isInteger(claims.exp)).toBe(true);
+        await expect(requestToken(SECRET, 'app-test', 600.5)).resolves.toBeTruthy();
+        await expect(requestToken(SECRET, 'app-test', 0.9)).rejects.toThrow();
+        await expect(requestToken(SECRET, 'app-test', NaN)).rejects.toThrow();
+    });
+
+    it('Should refuse a key without its id, rather than sign a token without kid', async () => {
+        const {key} = await importSecret(SECRET);
+        await expect(requestToken({key}, 'app-test')).rejects.toThrow(/id/);
+        await expect(requestToken({key, keyId: ''}, 'app-test')).rejects.toThrow(/id/);
+        const token = await requestToken({key, keyId: KEY_ID}, 'app-test');
+        expect(decode(token.split('.')[0]).kid).toBe(KEY_ID);
+    });
+
     it('Should make the Authorization header', async () => {
         const header = await authorizationHeader(SECRET, 'app-test');
         expect(header).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
@@ -126,6 +146,19 @@ describe('Join tokens with kid', () => {
         const token = await new OfflineAuthenticator(null, PKCS8_BASE64, 0, 's_0123456789abcdef').authenticate('c_1', 'private-a');
         expect(decode(token.split('.')[0])).toEqual({alg: 'EdDSA', typ: 'JWT', kid: 's_0123456789abcdef'});
         expect(await verify(token)).toBe(true);
+    });
+
+    it('Should sign join tokens for whole seconds, at most 600', async () => {
+        const {key} = await importSecret(SECRET);
+        const before = Math.floor(Date.now() / 1000);
+        const token = await authChannelWithKey('c_1', 'private-a', null, key, 0, 120.7, KEY_ID);
+        const exp = decode(token.split('.')[1]).exp;
+        expect(Number.isInteger(exp)).toBe(true);
+        expect(exp - before).toBeGreaterThanOrEqual(120);
+        expect(exp - before).toBeLessThanOrEqual(121);
+        await expect(authChannelWithKey('c_1', 'private-a', null, key, 0, 601, KEY_ID)).rejects.toThrow(/600/);
+        await expect(authChannelWithKey('c_1', 'private-a', null, key, 0, 0, KEY_ID)).rejects.toThrow();
+        await expect(authChannelWithKey('c_1', 'private-a', null, key, 0, 600, KEY_ID)).resolves.toBeTruthy();
     });
 
     it('Should sign as a bot with an API key', async () => {
@@ -158,6 +191,82 @@ describe('Rest', () => {
         const authorization = calls[0].init.headers.Authorization;
         expect(await verify(authorization.slice('Bearer '.length))).toBe(true);
         expect(calls[1].init.headers.Authorization).toBe(authorization);
+    });
+
+    it('Should drop a token refused with 401 and try once more with a fresh one', async () => {
+        // Every request moves the clock one second: well inside the four minutes a token is
+        // reused, so a token that was kept would be sent again, and a fresh one has a later iat.
+        const clock = jest.spyOn(Date, 'now');
+        let now = 1_800_000_000_000;
+        clock.mockImplementation(() => now);
+        const authorizations: string[] = [];
+        let statuses: number[] = [];
+        (globalThis as any).fetch = async (_url: string, init: any) => {
+            authorizations.push(init.headers.Authorization);
+            now += 1000;
+            const status = statuses.shift() as number;
+            return {ok: status < 300, status, json: async () => ({error: 'Unauthorized'})};
+        };
+        try {
+            const rest = new Rest({app: 'app-test', apiKey: SECRET});
+            statuses = [401, 202];
+            await rest.publish('orders', 'x', 1);
+            expect(authorizations).toHaveLength(2);
+            expect(authorizations[1]).not.toBe(authorizations[0]);
+
+            // A token that worked is reused.
+            statuses = [202];
+            await rest.publish('orders', 'x', 1);
+            expect(authorizations[2]).toBe(authorizations[1]);
+
+            // Only one retry: a second 401 is the answer, and that token is not kept either.
+            statuses = [401, 401];
+            await expect(rest.publish('orders', 'x', 1)).rejects.toThrow('401');
+            expect(authorizations).toHaveLength(5);
+            expect(authorizations[3]).toBe(authorizations[2]);
+            expect(authorizations[4]).not.toBe(authorizations[3]);
+            statuses = [202];
+            await rest.publish('orders', 'x', 1);
+            expect(authorizations[5]).not.toBe(authorizations[4]);
+
+            // Other refusals are not retried.
+            statuses = [403];
+            await expect(rest.publish('orders', 'x', 1)).rejects.toThrow('403');
+            expect(authorizations).toHaveLength(7);
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
+    it('Should refuse data that has no JSON form', async () => {
+        const calls: any[] = [];
+        (globalThis as any).fetch = async (...args: any[]) => {
+            calls.push(args);
+            return {ok: true, status: 202, json: async () => ({})};
+        };
+        const rest = new Rest({app: 'app-test', apiKey: SECRET});
+        await expect(rest.publish('orders', 'x', () => 1)).rejects.toThrow(/no JSON/);
+        await expect(rest.publish('orders', 'x', Symbol('s'))).rejects.toThrow(/no JSON/);
+        expect(calls).toEqual([]);
+        await rest.publish('orders', 'x', undefined);
+        expect(calls[0][1].body).toBe('null');
+    });
+
+    it('Should refuse to run in a browser, where the key would be anyone\'s', () => {
+        const g = globalThis as any;
+        g.window = {};
+        g.document = {};
+        try {
+            expect(() => new Rest({app: 'app-test', apiKey: SECRET})).toThrow(/never in a browser/);
+            expect(() => OfflineAuthenticator.fromSecret(SECRET)).toThrow(/never in a browser/);
+            expect(() => new MasterKeyAuthenticator({authenticate: async () => 't'}, Buffer.alloc(32).toString('base64'))).toThrow(/never in a browser/);
+            // A signing key for local experiments still works there.
+            expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0)).not.toThrow();
+        } finally {
+            delete g.window;
+            delete g.document;
+        }
+        expect(() => new Rest({app: 'app-test', apiKey: SECRET})).not.toThrow();
     });
 
     it('Should use next-api.pikoman.se by default', async () => {

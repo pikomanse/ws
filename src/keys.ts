@@ -10,8 +10,20 @@ import {fromBase64, fromBase64Url, subtle, toBase64Url, utf8} from './encoding';
 /** PKCS#8 DER of an Ed25519 private key, before its 32-byte seed. */
 const PKCS8_ED25519_PREFIX = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
 
-/** The longest a request token may live, in seconds (`exp - iat`). */
+/** The longest a request token or a join token may live, in seconds. */
 export const MAX_TOKEN_LIFETIME = 600;
+
+/**
+ * A token's lifetime in whole seconds (JWT times are integers): rounded down, and refused unless
+ * it is more than 0 and at most `MAX_TOKEN_LIFETIME`.
+ */
+export function tokenLifetime(lifetimeSeconds: number): number {
+    const seconds = Math.floor(lifetimeSeconds);
+    if (!(seconds > 0 && seconds <= MAX_TOKEN_LIFETIME)) {
+        throw new Error(`A token lives at least 1 and at most ${MAX_TOKEN_LIFETIME} seconds`);
+    }
+    return seconds;
+}
 
 /** A private key that signs, with the key id that goes in the JWT header as `kid`. */
 export interface KeyWithId {
@@ -95,23 +107,29 @@ export async function signToken(payload: object, signingKey: CryptoKey, keyId?: 
 }
 
 async function toKeyWithId(key: string | KeyWithId): Promise<KeyWithId> {
-    return typeof key === 'string' ? importSecret(key) : key;
+    if (typeof key === 'string') {
+        return importSecret(key);
+    }
+    // The server finds the API key by the kid; a request token without one is always refused.
+    if (!key || !key.keyId) {
+        throw new Error("A request token needs the API key's id: pass { keyId, key } or the sk_ secret");
+    }
+    return key;
 }
 
 /**
  * A token for one HTTP request to the API: `{"iss": appId, "iat": now, "exp": now + lifetime}`,
- * signed with an API key (`sk_…` secret, or an imported key and its id). Lifetime at most 600 s.
+ * signed with an API key (`sk_…` secret, or an imported key and its id). Lifetime in whole
+ * seconds, at most 600.
  */
 export async function requestToken(apiKey: string | KeyWithId, appId: string, lifetimeSeconds = 300): Promise<string> {
     if (!appId) {
         throw new Error('Need the app id');
     }
-    if (!(lifetimeSeconds > 0 && lifetimeSeconds <= MAX_TOKEN_LIFETIME)) {
-        throw new Error(`A request token lives at most ${MAX_TOKEN_LIFETIME} seconds`);
-    }
+    const lifetime = tokenLifetime(lifetimeSeconds);
     const {key, keyId} = await toKeyWithId(apiKey);
     const iat = Math.floor(Date.now() / 1000);
-    return signToken({iss: appId, iat, exp: iat + lifetimeSeconds}, key, keyId);
+    return signToken({iss: appId, iat, exp: iat + lifetime}, key, keyId);
 }
 
 /** The `Authorization` header value for one HTTP request: `Bearer <jwt>`. */

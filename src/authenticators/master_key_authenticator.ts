@@ -1,6 +1,6 @@
 import {Authenticator, JoinAuthorization, Options} from "../types";
 import {channelKey, isEncryptedChannel, MasterKey, startMasterKeyImport} from "../encryption";
-import {INSPECT} from "../redact";
+import {INSPECT, refuseInBrowser} from "../redact";
 
 /** The master key of each authenticator, out of reach of JSON.stringify and util.inspect. */
 const masterKeys = new WeakMap<MasterKeyAuthenticator, Promise<CryptoKey>>();
@@ -25,6 +25,7 @@ export default class MasterKeyAuthenticator implements Authenticator {
 
     /** `masterKey`: the app's 32-byte master key, base64 or bytes, or the CryptoKey from `importMasterKey`. */
     constructor(inner: Authenticator, masterKey: MasterKey) {
+        refuseInBrowser('MasterKeyAuthenticator');
         this.inner = inner;
         const key = startMasterKeyImport(masterKey);
         key.catch(() => undefined);

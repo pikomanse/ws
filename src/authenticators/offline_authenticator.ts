@@ -1,6 +1,6 @@
 import {Authenticator} from "../types";
-import {importSigningKey, signToken, startSecretImport} from "../keys";
-import {INSPECT} from "../redact";
+import {importSigningKey, signToken, startSecretImport, tokenLifetime} from "../keys";
+import {INSPECT, refuseInBrowser} from "../redact";
 
 /** The signing key of each authenticator, out of reach of JSON.stringify and util.inspect. */
 const signingKeys = new WeakMap<OfflineAuthenticator, Promise<CryptoKey>>();
@@ -20,13 +20,15 @@ const signingKeys = new WeakMap<OfflineAuthenticator, Promise<CryptoKey>>();
 
 export {importSigningKey, signToken};
 
-export function authChannelWithKey(clientId: string, channelName: string, data: any, signingKey: CryptoKey, permissions = 0, lifetimeSeconds = 300, keyId?: string): Promise<string> {
+/** Signs a join token. The lifetime is in whole seconds, at most 600 (the server refuses longer). */
+export async function authChannelWithKey(clientId: string, channelName: string, data: any, signingKey: CryptoKey, permissions = 0, lifetimeSeconds = 300, keyId?: string): Promise<string> {
+    const lifetime = tokenLifetime(lifetimeSeconds);
     return signToken({
         connection: clientId,
         channel: channelName,
         access: permissions,
         data,
-        exp: Math.floor(Date.now() / 1000) + lifetimeSeconds,
+        exp: Math.floor(Date.now() / 1000) + lifetime,
     }, signingKey, keyId);
 }
 
@@ -52,9 +54,11 @@ export default class OfflineAuthenticator implements Authenticator {
 
     /**
      * Joins as a bot with an API key's secret, `sk_<key id>.<seed>`. The key needs `subscribe`;
-     * access 3 (`permissions`) also needs `client_events`. Throws at once if the secret is malformed.
+     * access 3 (`permissions`) also needs `client_events`. Throws at once if the secret is malformed,
+     * and in a browser: an API key in a page is anyone's.
      */
     static fromSecret(secret: string, data: any = null, permissions = 0): OfflineAuthenticator {
+        refuseInBrowser('OfflineAuthenticator.fromSecret');
         const {keyId, key} = startSecretImport(secret);
         return new OfflineAuthenticator(data, key, permissions, keyId);
     }

@@ -234,6 +234,28 @@ describe('Encrypted channels', () => {
         expect(await decryptEvent(CHANNEL, 'typing', typing.data, TEST_CHANNEL_KEY, 'client')).toBeNull();
     });
 
+    it('Should reject a send that went nowhere because the connection is offline', async () => {
+        const {pikoman, socket} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey) as EncryptedChannel;
+        await until(() => socket.sent.length > 0);
+        socket.readyState = 3; // CLOSED
+        await expect(channel.send('vote', 1)).rejects.toThrow(/Not connected/);
+        socket.readyState = FakeWebSocket.OPEN;
+        await channel.send('vote', 2);
+        expect(socket.sent).toHaveLength(2);
+    });
+
+    it('Should refuse data that has no JSON form', async () => {
+        const {pikoman, socket} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey) as EncryptedChannel;
+        await until(() => socket.sent.length > 0);
+        await expect(channel.send('vote', () => 1)).rejects.toThrow(/no JSON/);
+        await expect(channel.send('vote', Symbol('s'))).rejects.toThrow(/no JSON/);
+        const plain = pikoman.listenPrivate('private-plain', {authenticate: async () => 'token'});
+        expect(() => plain.send('vote', () => 1)).toThrow(/no JSON/);
+        expect(socket.sent.filter((m: any) => m.op === 'send')).toEqual([]);
+    });
+
     it('Should refuse to send before it has a key', async () => {
         const {pikoman, socket} = connect();
         const channel = pikoman.listenPrivate(CHANNEL, {authenticate: () => new Promise(() => undefined)}) as EncryptedChannel;

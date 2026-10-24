@@ -292,10 +292,13 @@ export default class Pikoman {
 		}
 	}
 
-	send(message: ClientMessage) {
+	/** Sends a message if connected. Returns whether it was handed to the socket. */
+	send(message: ClientMessage): boolean {
 		if (this.isConnected()) {
 			this.ws.send(JSON.stringify(message));
+			return true;
 		}
+		return false;
 	}
 
 	clear() {
