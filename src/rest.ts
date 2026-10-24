@@ -70,7 +70,7 @@ export class Rest {
             if (!this.encryptionKey) {
                 throw new Error(`${channel} is encrypted: need the master key (option encryptionKey, or PIKOMAN_ENCRYPTION_KEY)`);
             }
-            body = await encryptEvent(channel, event, body, await channelKey(this.encryptionKey, channel));
+            body = await encryptEvent(channel, event, body, await channelKey(this.encryptionKey, channel), 'server');
         }
         const response = await fetch(`${this.address}/${encodeURIComponent(channel)}/${encodeURIComponent(event)}`, {
             method: 'POST',

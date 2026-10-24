@@ -34,6 +34,7 @@ import {
     ENCRYPTED_PREFIX,
     EncryptedData,
     ChannelKey,
+    Direction,
 } from './encryption';
 import {Rest, RestOptions, publish, DEFAULT_API_ADDRESS} from './rest';
 
@@ -74,5 +75,5 @@ export {
     Pikoman
 };
 export type SendData = SendDataType;
-export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, EncryptedData, ChannelKey, RestOptions};
+export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, EncryptedData, ChannelKey, Direction, RestOptions};
 export default Pikoman;

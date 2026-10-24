@@ -134,7 +134,7 @@ describe('Encrypted channels', () => {
         for (let n = 1; n <= 5; n++) {
             messages.push({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', {n}, TEST_CHANNEL_KEY)});
         }
-        messages.push({op: 'client_event', channel: CHANNEL, from: 'c_ola', event: 'message', data: await encryptEvent(CHANNEL, 'message', 'from Ola', TEST_CHANNEL_KEY)});
+        messages.push({op: 'client_event', channel: CHANNEL, from: 'c_ola', event: 'message', data: await encryptEvent(CHANNEL, 'message', 'from Ola', TEST_CHANNEL_KEY, 'client')});
         messages.forEach(receive);
         await until(() => onMessage.mock.calls.length >= 6);
 
@@ -163,6 +163,25 @@ describe('Encrypted channels', () => {
         expect(refused.mock.calls).toEqual([['decrypt_failed'], ['decrypt_failed'], ['decrypt_failed']]);
     });
 
+    it('Should not let a client event pass as the server, or back', async () => {
+        const {pikoman, socket, receive} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey);
+        await until(() => socket.sent.length > 0);
+        const on = jest.fn();
+        const refused = jest.fn();
+        channel.on('message', on);
+        channel.refused(refused);
+
+        // A member's ciphertext passed off as the backend's, and the other way round.
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 'fake', TEST_CHANNEL_KEY, 'client')});
+        receive({op: 'client_event', channel: CHANNEL, from: 'c_ola', event: 'message', data: await encryptEvent(CHANNEL, 'message', 'fake', TEST_CHANNEL_KEY, 'server')});
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 'real', TEST_CHANNEL_KEY, 'server')});
+        await until(() => on.mock.calls.length + refused.mock.calls.length >= 3);
+
+        expect(on.mock.calls).toEqual([['real']]);
+        expect(refused.mock.calls).toEqual([['decrypt_failed'], ['decrypt_failed']]);
+    });
+
     it('Should encrypt what send sends', async () => {
         const {pikoman, socket} = connect();
         const channel = pikoman.listenPrivate(CHANNEL, withKey) as EncryptedChannel;
@@ -172,9 +191,10 @@ describe('Encrypted channels', () => {
         const [vote, typing] = socket.sent.slice(1);
         expect(vote).toMatchObject({op: 'send', channel: CHANNEL, event: 'vote', echo: true});
         expect(Object.keys(vote.data).sort()).toEqual(['ciphertext', 'nonce']);
-        expect(await decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY)).toEqual({up: true});
+        expect(await decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY, 'client')).toEqual({up: true});
+        await expect(decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY, 'server')).rejects.toThrow();
         expect(typing).toMatchObject({op: 'send', channel: CHANNEL, event: 'typing', echo: false});
-        expect(await decryptEvent(CHANNEL, 'typing', typing.data, TEST_CHANNEL_KEY)).toBeNull();
+        expect(await decryptEvent(CHANNEL, 'typing', typing.data, TEST_CHANNEL_KEY, 'client')).toBeNull();
     });
 
     it('Should refuse to send before it has a key', async () => {

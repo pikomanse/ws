@@ -8,6 +8,8 @@ import {
     requestToken,
     authorizationHeader,
     Rest,
+    channelKey,
+    decryptEvent,
 } from '../src';
 import {installWebGlobals} from './web_globals';
 
@@ -183,6 +185,10 @@ describe('Rest', () => {
         const master = Buffer.alloc(32, 1).toString('base64');
         await new Rest({app: 'app-test', apiKey: SECRET, encryptionKey: master}).publish('private-encrypted-room', 'msg', {text: 'hi'});
         expect(Object.keys(bodies[0]).sort()).toEqual(['ciphertext', 'nonce']);
+        // Published over HTTP: authenticated as the server, not as a member.
+        const key = await channelKey(master, 'private-encrypted-room');
+        expect(await decryptEvent('private-encrypted-room', 'msg', bodies[0], key, 'server')).toEqual({text: 'hi'});
+        await expect(decryptEvent('private-encrypted-room', 'msg', bodies[0], key, 'client')).rejects.toThrow();
         await expect(new Rest({app: 'app-test', apiKey: SECRET}).publish('private-encrypted-room', 'msg', 1)).rejects.toThrow(/master key/);
     });
 });

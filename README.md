@@ -132,13 +132,26 @@ pikoman.listenPrivate("private-encrypted-team-7", auth);
 ```
 
 `publish` and `Rest` encrypt by themselves for these channels when they have the master key. By
-hand: `encryptEvent(channel, event, data, channelKey)` gives `{ nonce, ciphertext }` and
-`decryptEvent(channel, event, encrypted, channelKey)` reads it back.
+hand: `encryptEvent(channel, event, data, channelKey, direction = "server")` gives
+`{ nonce, ciphertext }` and `decryptEvent(channel, event, encrypted, channelKey, direction = "server")`
+reads it back. The direction is `"server"` for what your backend publishes over HTTP and `"client"`
+for client events between members (what `send` sends); the channel uses the right one by itself.
 
 The cipher is AES-256-GCM with a fresh 12-byte nonce per message, the channel key is
-HMAC-SHA256(master key, channel name), and `<channel>\n<event>` is authenticated with every message,
-so a message cannot be moved to another channel or passed off as another event. Not hidden: channel
-and event names, presence member data, and the size and time of messages.
+HMAC-SHA256(master key, channel name), and `<direction>\n<channel>\n<event>` is authenticated with
+every message (an event without a name uses ""). So a message cannot be moved to another channel,
+passed off as another event, or turned from a member's message into one that looks published by
+your backend, or back.
+
+What it does not protect against:
+
+- **Replay.** The relay could deliver the same ciphertext again. Put a timestamp or an id in the
+  data and ignore repeats when that matters.
+- **Who sent a client event.** `from` is set by the relay, and every member holds the same channel
+  key. Put the sender's identity in the data (and sign it, if it matters) when members must trust it.
+
+Not hidden: channel and event names, presence member data, the size and time of messages, and which
+connections talk. Name channels so the name says nothing sensitive.
 
 ## Requirements
 

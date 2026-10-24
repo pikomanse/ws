@@ -6,7 +6,9 @@
  * - Channel key: HMAC-SHA256(master key, channel name), 32 bytes. What a client gets.
  * - An event's data on the wire: `{"nonce": "<base64 12 bytes>", "ciphertext": "<base64>"}`,
  *   AES-256-GCM over the UTF-8 JSON of the real data, with the tag appended, and the UTF-8 bytes
- *   of `<channel>\n<event>` as additional authenticated data.
+ *   of `<direction>\n<channel>\n<event>` as additional authenticated data. The direction is
+ *   `server` for what the app's backend publishes over HTTP and `client` for client events between
+ *   members, so neither can be passed off as the other. An event without a name uses "".
  */
 import {fromBase64, fromUtf8, keyBytes, randomBytes, subtle, toBase64, utf8} from './encoding';
 
@@ -54,24 +56,55 @@ export async function importChannelKey(key: ChannelKey): Promise<CryptoKey> {
     return subtle().importKey('raw', bytes, {name: 'AES-GCM'}, false, ['encrypt', 'decrypt']);
 }
 
-const additionalData = (channel: string, event: string) => utf8(`${channel}\n${event}`);
+/**
+ * Who made an event: `server` for what the app's backend publishes over the HTTP API (`Rest`,
+ * `publish`), `client` for client events that members send each other (`channel.send`).
+ */
+export type Direction = 'server' | 'client';
 
-/** Encrypts an event's data for an encrypted channel. A fresh random nonce every time. */
-export async function encryptEvent(channel: string, event: string, data: any, key: ChannelKey): Promise<EncryptedData> {
+function additionalData(direction: Direction, channel: string, event: string): Uint8Array {
+    if (direction !== 'server' && direction !== 'client') {
+        throw new Error('The direction is "server" or "client"');
+    }
+    return utf8(`${direction}\n${channel}\n${event ?? ''}`);
+}
+
+/**
+ * The JSON text of an event's data. `undefined` is sent as `null`; data that has no JSON (a
+ * function, a symbol) is refused rather than sent as nothing.
+ */
+export function eventJson(data: any): string {
+    if (data === undefined) {
+        return 'null';
+    }
+    const json = JSON.stringify(data);
+    if (json === undefined) {
+        throw new Error(`Pikoman: event data of type ${typeof data} has no JSON form`);
+    }
+    return json;
+}
+
+/**
+ * Encrypts an event's data for an encrypted channel. A fresh random nonce every time.
+ * `direction` is `server` (the default) for a publish over the HTTP API, `client` for a client event.
+ */
+export async function encryptEvent(channel: string, event: string, data: any, key: ChannelKey, direction: Direction = 'server'): Promise<EncryptedData> {
     const nonce = randomBytes(12);
     const ciphertext = await subtle().encrypt(
-        {name: 'AES-GCM', iv: nonce, additionalData: additionalData(channel, event), tagLength: 128},
+        {name: 'AES-GCM', iv: nonce, additionalData: additionalData(direction, channel, event), tagLength: 128},
         await importChannelKey(key),
-        utf8(JSON.stringify(data === undefined ? null : data)),
+        utf8(eventJson(data)),
     );
     return {nonce: toBase64(nonce), ciphertext: toBase64(new Uint8Array(ciphertext))};
 }
 
 /**
  * Decrypts an event's data from an encrypted channel. Throws if it is not `{nonce, ciphertext}`,
- * or was made with another key, for another channel or event, or changed on the way.
+ * or was made with another key, for another channel, event or direction, or changed on the way.
+ * `direction` is `server` (the default) for an event published over the HTTP API, `client` for a
+ * client event.
  */
-export async function decryptEvent(channel: string, event: string, data: any, key: ChannelKey): Promise<any> {
+export async function decryptEvent(channel: string, event: string, data: any, key: ChannelKey, direction: Direction = 'server'): Promise<any> {
     if (typeof data !== 'object' || data === null || typeof data.nonce !== 'string' || typeof data.ciphertext !== 'string') {
         throw new Error('Not encrypted data');
     }
@@ -80,7 +113,7 @@ export async function decryptEvent(channel: string, event: string, data: any, ke
         throw new Error('The nonce is 12 bytes');
     }
     const plaintext = await subtle().decrypt(
-        {name: 'AES-GCM', iv: nonce, additionalData: additionalData(channel, event), tagLength: 128},
+        {name: 'AES-GCM', iv: nonce, additionalData: additionalData(direction, channel, event), tagLength: 128},
         await importChannelKey(key),
         fromBase64(data.ciphertext),
     );

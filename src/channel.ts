@@ -359,7 +359,10 @@ export class EncryptedChannel extends PrivateChannel {
 					if (!this.key) {
 						throw new Error("No channel key");
 					}
-					data = await decryptEvent(this.name, message.event ?? "", message.data, await this.key);
+					// What the backend published (op "event") and what members sent (op "client_event")
+						// are authenticated with different directions, so one cannot pose as the other.
+						const direction = message.op === "event" ? "server" : "client";
+						data = await decryptEvent(this.name, message.event ?? "", message.data, await this.key, direction);
 				} catch (e) {
 					this.report("decrypt_failed");
 					return;
@@ -384,7 +387,7 @@ export class EncryptedChannel extends PrivateChannel {
 				op: "send",
 				channel: this.name,
 				event,
-				data: await encryptEvent(this.name, event, data === undefined ? null : data, await this.key),
+				data: await encryptEvent(this.name, event, data, await this.key, "client"),
 				echo: toAll,
 			});
 		});

@@ -24,6 +24,6 @@ export {
     isEncryptedChannel,
     ENCRYPTED_PREFIX,
 } from './encryption';
-export type {EncryptedData, ChannelKey} from './encryption';
+export type {EncryptedData, ChannelKey, Direction} from './encryption';
 export {default as OfflineAuthenticator} from './authenticators/offline_authenticator';
 export {default as MasterKeyAuthenticator} from './authenticators/master_key_authenticator';

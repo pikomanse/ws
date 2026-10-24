@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 import {createCipheriv, createDecipheriv, randomBytes} from 'crypto';
-import {channelKey, decryptEvent, encryptEvent, importChannelKey} from '../src';
+import {channelKey, decryptEvent, Direction, encryptEvent, importChannelKey} from '../src';
 import {installWebGlobals} from './web_globals';
 
 // Test keys only. The master key is the bytes 0, 1, …, 31.
@@ -53,14 +53,14 @@ describe('Encrypted events', () => {
         const key = Buffer.from(TEST_CHANNEL_KEY, 'base64');
         const nonce = randomBytes(12);
         const cipher = createCipheriv('aes-256-gcm', key, nonce);
-        cipher.setAAD(Buffer.from(`${CHANNEL}\nmessage`));
+        cipher.setAAD(Buffer.from(`server\n${CHANNEL}\nmessage`));
         const ciphertext = Buffer.concat([cipher.update(JSON.stringify(data)), cipher.final(), cipher.getAuthTag()]);
         expect(await decryptEvent(CHANNEL, 'message', {nonce: nonce.toString('base64'), ciphertext: ciphertext.toString('base64')}, TEST_CHANNEL_KEY)).toEqual(data);
 
         const ours = await encryptEvent(CHANNEL, 'message', data, TEST_CHANNEL_KEY);
         const bytes = Buffer.from(ours.ciphertext, 'base64');
         const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ours.nonce, 'base64'));
-        decipher.setAAD(Buffer.from(`${CHANNEL}\nmessage`));
+        decipher.setAAD(Buffer.from(`server\n${CHANNEL}\nmessage`));
         decipher.setAuthTag(bytes.subarray(bytes.length - 16));
         const plaintext = Buffer.concat([decipher.update(bytes.subarray(0, bytes.length - 16)), decipher.final()]);
         expect(JSON.parse(plaintext.toString('utf8'))).toEqual(data);
@@ -70,6 +70,27 @@ describe('Encrypted events', () => {
         const encrypted = await encryptEvent(CHANNEL, 'message', data, TEST_CHANNEL_KEY);
         await expect(decryptEvent('private-encrypted-other', 'message', encrypted, TEST_CHANNEL_KEY)).rejects.toThrow();
         await expect(decryptEvent(CHANNEL, 'other', encrypted, TEST_CHANNEL_KEY)).rejects.toThrow();
+    });
+
+    it('Should fail in the other direction (AAD)', async () => {
+        const fromServer = await encryptEvent(CHANNEL, 'message', data, TEST_CHANNEL_KEY, 'server');
+        const fromClient = await encryptEvent(CHANNEL, 'message', data, TEST_CHANNEL_KEY, 'client');
+        expect(await decryptEvent(CHANNEL, 'message', fromServer, TEST_CHANNEL_KEY, 'server')).toEqual(data);
+        expect(await decryptEvent(CHANNEL, 'message', fromClient, TEST_CHANNEL_KEY, 'client')).toEqual(data);
+        await expect(decryptEvent(CHANNEL, 'message', fromServer, TEST_CHANNEL_KEY, 'client')).rejects.toThrow();
+        await expect(decryptEvent(CHANNEL, 'message', fromClient, TEST_CHANNEL_KEY, 'server')).rejects.toThrow();
+        // The default is server, as for a publish over HTTP.
+        expect(await decryptEvent(CHANNEL, 'message', fromServer, TEST_CHANNEL_KEY)).toEqual(data);
+        await expect(decryptEvent(CHANNEL, 'message', fromClient, TEST_CHANNEL_KEY)).rejects.toThrow();
+        await expect(encryptEvent(CHANNEL, 'message', data, TEST_CHANNEL_KEY, 'both' as any)).rejects.toThrow(/direction/);
+    });
+
+    it('Should refuse data that has no JSON form', async () => {
+        for (const bad of [() => 1, Symbol('s')]) {
+            await expect(encryptEvent(CHANNEL, 'message', bad, TEST_CHANNEL_KEY)).rejects.toThrow(/no JSON/);
+        }
+        // undefined is sent as null, as in a plain channel.
+        expect(await decryptEvent(CHANNEL, 'm', await encryptEvent(CHANNEL, 'm', undefined, TEST_CHANNEL_KEY), TEST_CHANNEL_KEY)).toBeNull();
     });
 
     it('Should fail with the wrong key', async () => {
@@ -90,6 +111,22 @@ describe('Encrypted events', () => {
         nonce[0] ^= 1;
         await expect(decryptEvent(CHANNEL, 'message', {...encrypted, nonce: nonce.toString('base64')}, TEST_CHANNEL_KEY)).rejects.toThrow();
         await expect(decryptEvent(CHANNEL, 'message', {...encrypted, ciphertext: bytes.subarray(0, bytes.length - 1).toString('base64')}, TEST_CHANNEL_KEY)).rejects.toThrow();
+    });
+
+    it('Should read the fixed vectors', async () => {
+        // Made once with Node's crypto: the channel key above, the nonce 0, 1, …, 11, and the AAD
+        // `<direction>\n<channel>\n<event>`. Other libraries (the Rust crate) can check the same bytes.
+        const nonce = 'AAECAwQFBgcICQoL';
+        const vectors: [Direction, string, string, any][] = [
+            ['server', 'message', '+OUwyZTgsN9LZaMOU0G+DcstVR88BuFRU9459MuI', {text: 'hej'}],
+            ['client', 'message', '+OUwyZTgsN9LZaMOU0Ga3RxDalEHfSA3ra1/b/7D', {text: 'hej'}],
+            ['server', '', '7bIowIH5W+5XA7DldbXSv8oT/a0=', null],
+        ];
+        for (const [direction, event, ciphertext, plain] of vectors) {
+            expect(await decryptEvent(CHANNEL, event, {nonce, ciphertext}, TEST_CHANNEL_KEY, direction)).toEqual(plain);
+            const other: Direction = direction === 'server' ? 'client' : 'server';
+            await expect(decryptEvent(CHANNEL, event, {nonce, ciphertext}, TEST_CHANNEL_KEY, other)).rejects.toThrow();
+        }
     });
 
     it('Should fail on data that is not {nonce, ciphertext}', async () => {
