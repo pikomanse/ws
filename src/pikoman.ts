@@ -1,4 +1,5 @@
-import { Channel, PresenceChannel, PrivateChannel } from "./channel";
+import { Channel, EncryptedChannel, PresenceChannel, PrivateChannel } from "./channel";
+import { isEncryptedChannel } from "./encryption";
 import {
 	Authenticator,
 	ClientMessage,
@@ -251,6 +252,10 @@ export default class Pikoman {
 		return this.addChannel(channelName, () => new Channel(channelName, this));
 	}
 
+	/**
+	 * Joins a `private-` channel with a token from the authenticator. A `private-encrypted-`
+	 * channel gives an `EncryptedChannel`, which also needs a channel key from the authenticator.
+	 */
 	listenPrivate(
 		channelName: string,
 		authenticator: Authenticator = new HttpAuthenticator(),
@@ -258,9 +263,10 @@ export default class Pikoman {
 		if (!channelName.startsWith("private-")) {
 			throw new Error(`Private channels must start with prefix private-`);
 		}
-		return this.addChannel(
-			channelName,
-			() => new PrivateChannel(channelName, this, authenticator),
+		return this.addChannel(channelName, () =>
+			isEncryptedChannel(channelName)
+				? new EncryptedChannel(channelName, this, authenticator)
+				: new PrivateChannel(channelName, this, authenticator),
 		);
 	}
 

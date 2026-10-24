@@ -1,13 +1,15 @@
 # @pikoman/ws
 
-The browser client for [Pikoman](https://pikoman.se), a hosted WebSocket service: public channels,
-presence channels with a member list, and private channels.
+The JavaScript client for [Pikoman](https://pikoman.se), a hosted WebSocket service: public channels,
+presence channels with a member list, private channels and end-to-end encrypted channels. It also
+has what a Node backend, bot or script needs: request tokens and `publish` for the HTTP API, join
+tokens signed with an API key, and the encryption helpers. Web Crypto only, no dependencies.
 
 **1.0 speaks protocol 2.0.** It needs an app from the [dashboard](https://pikoman.se/dashboard/) and
 does not work with 1.x apps or servers. What changed: [Protocol 2.0](https://pikoman.se/docs/v2/).
 
 ```bash
-npm install @pikoman/ws@next     # 1.0.0-rc: protocol 2.0
+npm install @pikoman/ws@next     # 1.x release candidates: protocol 2.0
 npm install @pikoman/ws          # 0.x: protocol 1.x, until 1.0.0 is released
 ```
 
@@ -37,17 +39,112 @@ room.send("typing", { on: true });                            // a third argumen
 pikoman.listenPrivate("private-user-123").on("notification", (data) => console.log(data));
 ```
 
-Messages to a channel are published from your backend over HTTP, with the app's API key:
+## Publish from a backend
 
-```bash
-curl -u app-yourapp:$PIKOMAN_API_KEY -d '{"id": 1042}' https://next-api.pikoman.se/orders/order-shipped
+Messages to a channel are published from your backend over HTTP, signed with an API key from the
+dashboard. The secret looks like `sk_k_<16 hex>.<43 characters>` and goes in `PIKOMAN_API_KEY`,
+never in frontend code.
+
+```js
+import { publish, Rest } from "@pikoman/ws";   // or "@pikoman/ws/dist/server": no websocket client
+
+// Reads PIKOMAN_APP and PIKOMAN_API_KEY (and PIKOMAN_ENCRYPTION_KEY for encrypted channels).
+await publish("orders", "order-shipped", { id: 1042 });
+
+// Or with explicit settings; address defaults to https://next-api.pikoman.se.
+const rest = new Rest({ app: "app-yourapp", apiKey: process.env.PIKOMAN_API_KEY });
+await rest.publish("orders", "order-shipped", { id: 1042 });
 ```
+
+Each request carries `Authorization: Bearer <jwt>`: an EdDSA JWT with `kid` (the key id) in the
+header and `iss` (the app id), `iat` and `exp` (at most 10 minutes) as claims. `Rest` makes one
+that lives five minutes and reuses it for four. For other requests (stats, clients, disconnect),
+make the header yourself:
+
+```js
+import { authorizationHeader } from "@pikoman/ws";
+
+const res = await fetch("https://next-api.pikoman.se/orders/stats", {
+  headers: { Authorization: await authorizationHeader(process.env.PIKOMAN_API_KEY, "app-yourapp") },
+});
+```
+
+`requestToken(apiKey, appId, lifetimeSeconds = 300)` gives the JWT alone. Both take the `sk_` secret
+or `{ keyId, key }` with an imported key.
 
 ## Join tokens
 
-Your backend signs an EdDSA JWT with the app's private key, for one connection and one channel,
-valid for at most 10 minutes. Endpoints for Node and PHP are in the
+Your backend signs an EdDSA JWT with one of the app's signing keys, for one connection and one
+channel, valid for at most 10 minutes. Endpoints for Node and PHP are in the
 [quickstart](https://pikoman.se/docs/#token). The private key never goes in frontend code.
+
+`OfflineAuthenticator` signs them without a token endpoint, in a backend or a bot:
+
+```js
+import Pikoman, { OfflineAuthenticator } from "@pikoman/ws";
+
+// With a signing key (PKCS#8, PEM or base64 on one line). The key id is optional and goes in
+// the token's header as `kid`, so the server checks that key only.
+const auth = new OfflineAuthenticator({ name: "Anna" }, process.env.PIKOMAN_PRIVATE_KEY, 3,
+  process.env.PIKOMAN_SIGNING_KEY_ID);
+
+// As a bot, with an API key that has `subscribe` (access 3 also needs `client_events`).
+const bot = OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY, { name: "Bot" }, 3);
+pikoman.listenPresence("presence-room", bot);
+```
+
+`parseSecret(secret)` reads an `sk_` secret into `{ keyId, seed }` and throws on anything malformed.
+
+## End-to-end encrypted channels
+
+Channels named `private-encrypted-…` carry only ciphertext: Pikoman relays what it cannot read.
+Your backend keeps a 32-byte master key (`PIKOMAN_ENCRYPTION_KEY`, base64) that Pikoman never sees,
+and gives each client the key for the channels it is let into.
+
+```js
+// Browser: join as with private channels. Events arrive decrypted; send encrypts.
+const secret = pikoman.listenPrivate("private-encrypted-team-7");
+secret.on("message", (data) => console.log(data.text));
+secret.send("message", { text: "hej" });
+secret.refused((code) => console.warn(code));  // "decrypt_failed": a message was dropped
+```
+
+The token endpoint answers such a join with the channel key next to the token, and
+`HttpAuthenticator` keeps it with the channel:
+
+```js
+import { channelKey } from "@pikoman/ws";
+
+// In the token endpoint, after deciding the user may join `channel`:
+res.json({ token, channel_key: await channelKey(process.env.PIKOMAN_ENCRYPTION_KEY, channel) });
+```
+
+A program that holds the master key needs no endpoint:
+
+```js
+import { MasterKeyAuthenticator, OfflineAuthenticator } from "@pikoman/ws";
+
+const auth = new MasterKeyAuthenticator(
+  OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY),
+  process.env.PIKOMAN_ENCRYPTION_KEY,
+);
+pikoman.listenPrivate("private-encrypted-team-7", auth);
+```
+
+`publish` and `Rest` encrypt by themselves for these channels when they have the master key. By
+hand: `encryptEvent(channel, event, data, channelKey)` gives `{ nonce, ciphertext }` and
+`decryptEvent(channel, event, encrypted, channelKey)` reads it back.
+
+The cipher is AES-256-GCM with a fresh 12-byte nonce per message, the channel key is
+HMAC-SHA256(master key, channel name), and `<channel>\n<event>` is authenticated with every message,
+so a message cannot be moved to another channel or passed off as another event. Not hidden: channel
+and event names, presence member data, and the size and time of messages.
+
+## Requirements
+
+Browsers with Ed25519 in Web Crypto (only for signing in the page) and AES-GCM (every current
+browser). Node 20 or later; Node 18 needs `globalThis.crypto = require("node:crypto").webcrypto`.
+The websocket client in Node needs a global `WebSocket` (Node 22+).
 
 ## License
 

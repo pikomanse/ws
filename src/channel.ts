@@ -1,5 +1,6 @@
 import Pikoman from "./pikoman";
-import { Authenticator, ChannelMessage, Fn, MessageType } from "./types";
+import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, MessageType } from "./types";
+import { decryptEvent, encryptEvent, importChannelKey } from "./encryption";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
 import Topics from "./topics";
@@ -106,7 +107,10 @@ export class Channel {
 		this.opcodes.on(MessageType.ServerMessage, fn);
 	}
 
-	/** The server refused to let this connection join: `fn(code)`. */
+	/**
+	 * The server refused something for this channel (`join_refused`, `not_allowed`, …), or, in an
+	 * encrypted channel, a message did not decrypt (`decrypt_failed`): `fn(code)`.
+	 */
 	refused(fn: Fn) {
 		this.opcodes.on(MessageType.Refused, fn);
 	}
@@ -175,16 +179,28 @@ export class PrivateChannel extends Channel {
 	join() {
 		(async () => {
 			try {
-				const token = await this.authenticator.authenticate(
+				const answer = await this.authenticator.authenticate(
 					this.pikoman.getClientId(),
 					this.name,
 					this.pikoman.getOptions(),
 				);
-				this.pikoman.send({ op: "join", channel: this.name, token });
+				const token = await this.accept(answer);
+				if (token !== undefined) {
+					this.pikoman.send({ op: "join", channel: this.name, token });
+				}
 			} catch (e) {
 				console.error(`Pikoman: ${(e as Error).message}`);
 			}
 		})();
+	}
+
+	/** Takes the authenticator's answer; returns the token to join with, or nothing to not join. */
+	protected async accept(answer: string | JoinAuthorization): Promise<string | undefined> {
+		return typeof answer === "string" ? answer : answer.token;
+	}
+
+	protected report(code: ClientErrorCode) {
+		this.opcodes.dispatch(MessageType.Refused, [code]);
 	}
 
 	/** Client events from other connections: `fn(clientId, event, data)`. */
@@ -304,5 +320,75 @@ export class PresenceChannel extends PrivateChannel {
 				super.handle(message);
 			}
 		}
+	}
+}
+
+/**
+ * A `private-encrypted-` channel: a private channel whose events only the app's own backend and the
+ * members with the channel key can read. Events are decrypted before `on`, `serverMessage` and
+ * `clientMessage` see them, and `send` encrypts. A message that does not decrypt is dropped and
+ * reported through `refused("decrypt_failed")`.
+ *
+ * The channel key comes from the authenticator: the token endpoint answers it as `channel_key`
+ * (HttpAuthenticator), or a program with the master key derives it (MasterKeyAuthenticator).
+ */
+export class EncryptedChannel extends PrivateChannel {
+	private key?: Promise<CryptoKey>;
+	// Decrypting and encrypting are asynchronous; these keep messages in the order they came.
+	private incoming: Promise<void> = Promise.resolve();
+	private outgoing: Promise<void> = Promise.resolve();
+
+	protected async accept(answer: string | JoinAuthorization): Promise<string | undefined> {
+		const channelKey = typeof answer === "string" ? undefined : answer.channel_key;
+		if (!channelKey) {
+			console.error(`Pikoman: no channel_key for ${this.name}, so it is not joined`);
+			this.report("no_channel_key");
+			return undefined;
+		}
+		const key = importChannelKey(channelKey);
+		await key;
+		this.key = key;
+		return typeof answer === "string" ? answer : answer.token;
+	}
+
+	handle(message: ChannelMessage) {
+		this.incoming = this.incoming.then(async () => {
+			if (message.op === "event" || message.op === "client_event") {
+				let data: any;
+				try {
+					if (!this.key) {
+						throw new Error("No channel key");
+					}
+					data = await decryptEvent(this.name, message.event ?? "", message.data, await this.key);
+				} catch (e) {
+					this.report("decrypt_failed");
+					return;
+				}
+				super.handle({ ...message, data });
+				return;
+			}
+			super.handle(message);
+		});
+	}
+
+	/**
+	 * Encrypts and sends a client event. `toAll` also delivers it to this connection. The promise
+	 * settles once it is handed to the socket; it rejects if there is no channel key yet.
+	 */
+	send(event: string, data?: any, toAll = false): Promise<void> {
+		const sent = this.outgoing.then(async () => {
+			if (!this.key) {
+				throw new Error(`No channel key for ${this.name} yet`);
+			}
+			this.pikoman.send({
+				op: "send",
+				channel: this.name,
+				event,
+				data: await encryptEvent(this.name, event, data === undefined ? null : data, await this.key),
+				echo: toAll,
+			});
+		});
+		this.outgoing = sent.catch(() => undefined);
+		return sent;
 	}
 }

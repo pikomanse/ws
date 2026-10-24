@@ -1,0 +1,202 @@
+/**
+ * @jest-environment node
+ */
+import {
+    Authenticator,
+    channelKey,
+    decryptEvent,
+    encryptEvent,
+    EncryptedChannel,
+    HttpAuthenticator,
+    MasterKeyAuthenticator,
+    OfflineAuthenticator,
+    Pikoman,
+} from '../src';
+import {installWebGlobals} from './web_globals';
+
+// Test keys only.
+const MASTER = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+const CHANNEL = 'private-encrypted-test';
+const TEST_CHANNEL_KEY = 'BXZ3eZVE7qg3gVuvKUOimdghY3hQ1Gm0h9uULbkIQb0=';
+const SECRET = `sk_k_3f9a1c0e5b7d2468.${Buffer.alloc(32, 7).toString('base64url')}`;
+
+/** Stands in for the WebSocket, so no test touches the network. */
+class FakeWebSocket {
+    static OPEN = 1;
+    static last: FakeWebSocket;
+    readyState = FakeWebSocket.OPEN;
+    sent: any[] = [];
+
+    constructor(public url: string) {
+        FakeWebSocket.last = this;
+    }
+
+    send(data: string) {
+        this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+    }
+}
+
+const g = globalThis as any;
+const realWebSocket = g.WebSocket;
+const realFetch = g.fetch;
+const opened: Pikoman[] = [];
+beforeAll(installWebGlobals);
+beforeEach(() => {
+    g.WebSocket = FakeWebSocket;
+});
+afterEach(() => {
+    // Stops the ping and offline timers.
+    opened.splice(0).forEach((pikoman: any) => pikoman.closeQuietly());
+    g.WebSocket = realWebSocket;
+    g.fetch = realFetch;
+});
+
+function connect() {
+    const pikoman = new Pikoman('app-test', {ws_address: 'ws://localhost', auth_url: 'https://app.example/auth'});
+    opened.push(pikoman);
+    const socket = FakeWebSocket.last;
+    const receive = (message: object) => (pikoman as any).onMessage({data: JSON.stringify(message)});
+    receive({op: 'connected', id: 'c_me'});
+    return {pikoman, socket, receive};
+}
+
+/** Waits until `done()` holds; Web Crypto runs on Node's thread pool, so it can take a while. */
+const until = async (done: () => boolean) => {
+    for (let i = 0; i < 1000 && !done(); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(done()).toBe(true);
+};
+
+const withKey: Authenticator = {
+    authenticate: async (clientId, channel) => ({token: `token-${clientId}-${channel}`, channel_key: TEST_CHANNEL_KEY}),
+};
+
+describe('Encrypted channels', () => {
+    it('Should join like a private channel, with the key from the authenticator', async () => {
+        const {pikoman, socket} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey);
+        expect(channel).toBeInstanceOf(EncryptedChannel);
+        await until(() => socket.sent.length > 0);
+        expect(socket.sent).toEqual([{op: 'join', channel: CHANNEL, token: `token-c_me-${CHANNEL}`}]);
+    });
+
+    it('Should read channel_key from the token endpoint', async () => {
+        const urls: string[] = [];
+        g.fetch = async (url: string) => {
+            urls.push(url);
+            return {ok: true, json: async () => ({token: 'jwt', channel_key: TEST_CHANNEL_KEY})};
+        };
+        const {pikoman, socket, receive} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL);
+        const on = jest.fn();
+        channel.on('message', on);
+        await until(() => socket.sent.length > 0);
+        expect(urls).toEqual([`https://app.example/auth/c_me-${CHANNEL}`]);
+        expect(socket.sent).toEqual([{op: 'join', channel: CHANNEL, token: 'jwt'}]);
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', {text: 'hej'}, TEST_CHANNEL_KEY)});
+        await until(() => on.mock.calls.length > 0);
+        expect(on.mock.calls).toEqual([[{text: 'hej'}]]);
+    });
+
+    it('Should answer the token alone from HttpAuthenticator when there is no channel key', async () => {
+        g.fetch = async () => ({ok: true, json: async () => ({token: 'jwt'})});
+        expect(await new HttpAuthenticator().authenticate('c_me', 'private-a', {auth_url: '/auth'})).toBe('jwt');
+    });
+
+    it('Should not join without a channel key, and say so', async () => {
+        const {pikoman, socket} = connect();
+        const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+        const channel = pikoman.listenPrivate(CHANNEL, {authenticate: async () => 'token-only'});
+        const refused = jest.fn();
+        channel.refused(refused);
+        await until(() => refused.mock.calls.length > 0);
+        error.mockRestore();
+        expect(socket.sent).toEqual([]);
+        expect(refused.mock.calls).toEqual([['no_channel_key']]);
+    });
+
+    it('Should decrypt server and client events, in order, before handlers see them', async () => {
+        const {pikoman, socket, receive} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey);
+        await until(() => socket.sent.length > 0);
+        const onMessage = jest.fn();
+        const serverMessage = jest.fn();
+        const clientMessage = jest.fn();
+        channel.on('message', onMessage);
+        channel.serverMessage(serverMessage);
+        channel.clientMessage(clientMessage);
+
+        const messages = [];
+        for (let n = 1; n <= 5; n++) {
+            messages.push({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', {n}, TEST_CHANNEL_KEY)});
+        }
+        messages.push({op: 'client_event', channel: CHANNEL, from: 'c_ola', event: 'message', data: await encryptEvent(CHANNEL, 'message', 'from Ola', TEST_CHANNEL_KEY)});
+        messages.forEach(receive);
+        await until(() => onMessage.mock.calls.length >= 6);
+
+        expect(onMessage.mock.calls).toEqual([[{n: 1}], [{n: 2}], [{n: 3}], [{n: 4}], [{n: 5}], ['c_ola', 'from Ola']]);
+        expect(serverMessage.mock.calls).toEqual([1, 2, 3, 4, 5].map((n) => [{n}, 'message']));
+        expect(clientMessage.mock.calls).toEqual([['c_ola', 'message', 'from Ola']]);
+    });
+
+    it('Should drop what does not decrypt and report decrypt_failed', async () => {
+        const {pikoman, socket, receive} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey);
+        await until(() => socket.sent.length > 0);
+        const on = jest.fn();
+        const refused = jest.fn();
+        channel.on('message', on);
+        channel.refused(refused);
+
+        const otherKey = await channelKey(MASTER, 'private-encrypted-other');
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: {text: 'plain'}});
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 1, otherKey)});
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'other-event', 2, TEST_CHANNEL_KEY)});
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 3, TEST_CHANNEL_KEY)});
+        await until(() => on.mock.calls.length + refused.mock.calls.length >= 4);
+
+        expect(on.mock.calls).toEqual([[3]]);
+        expect(refused.mock.calls).toEqual([['decrypt_failed'], ['decrypt_failed'], ['decrypt_failed']]);
+    });
+
+    it('Should encrypt what send sends', async () => {
+        const {pikoman, socket} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, withKey) as EncryptedChannel;
+        await until(() => socket.sent.length > 0);
+        await channel.send('vote', {up: true}, true);
+        await channel.send('typing');
+        const [vote, typing] = socket.sent.slice(1);
+        expect(vote).toMatchObject({op: 'send', channel: CHANNEL, event: 'vote', echo: true});
+        expect(Object.keys(vote.data).sort()).toEqual(['ciphertext', 'nonce']);
+        expect(await decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY)).toEqual({up: true});
+        expect(typing).toMatchObject({op: 'send', channel: CHANNEL, event: 'typing', echo: false});
+        expect(await decryptEvent(CHANNEL, 'typing', typing.data, TEST_CHANNEL_KEY)).toBeNull();
+    });
+
+    it('Should refuse to send before it has a key', async () => {
+        const {pikoman, socket} = connect();
+        const channel = pikoman.listenPrivate(CHANNEL, {authenticate: () => new Promise(() => undefined)}) as EncryptedChannel;
+        await expect(channel.send('vote', 1)).rejects.toThrow(/No channel key/);
+        expect(socket.sent).toEqual([]);
+    });
+
+    it('Should let a program with the master key join without an endpoint', async () => {
+        const {pikoman, socket, receive} = connect();
+        const auth = new MasterKeyAuthenticator(OfflineAuthenticator.fromSecret(SECRET, {bot: true}, 3), MASTER);
+        const channel = pikoman.listenPrivate(CHANNEL, auth);
+        const on = jest.fn();
+        channel.on('message', on);
+        await until(() => socket.sent.length > 0);
+        expect(socket.sent[0]).toMatchObject({op: 'join', channel: CHANNEL});
+        expect(socket.sent[0].token.split('.')).toHaveLength(3);
+        receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 'hi', TEST_CHANNEL_KEY)});
+        await until(() => on.mock.calls.length > 0);
+        expect(on.mock.calls).toEqual([['hi']]);
+        // Channels that are not encrypted get the token alone.
+        expect(typeof await auth.authenticate('c_me', 'private-plain', {})).toBe('string');
+    });
+});

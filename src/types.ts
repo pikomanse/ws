@@ -38,14 +38,31 @@ export interface Options {
 }
 
 /**
- * Gets a join token for a `presence-` or `private-` channel. The token is signed by the app's
- * backend; see the docs on pikoman.se.
+ * A join token, and for a `private-encrypted-` channel the channel key (base64, 32 bytes), as a
+ * token endpoint answers it.
  */
-export interface Authenticator {
-    authenticate: (clientId: string, channelName: string, options: Options) => Promise<string>;
+export interface JoinAuthorization {
+    token: string;
+    channel_key?: string;
 }
 
-export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited';
+/**
+ * Gets a join token for a `presence-`, `private-` or `private-encrypted-` channel. The token is
+ * signed by the app's backend; see the docs on pikoman.se. For an encrypted channel it answers
+ * a `JoinAuthorization` with the channel key; otherwise the token alone is enough.
+ */
+export interface Authenticator {
+    authenticate: (clientId: string, channelName: string, options: Options) => Promise<string | JoinAuthorization>;
+}
+
+/** Codes from the server. */
+export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited' | 'not_encrypted';
+
+/**
+ * Codes `refused` also reports from the client itself, in encrypted channels: a message that did
+ * not decrypt (dropped), or a join without a channel key (not sent).
+ */
+export type ClientErrorCode = 'decrypt_failed' | 'no_channel_key';
 
 /** Messages the client sends. */
 export type ClientMessage =

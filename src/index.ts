@@ -1,5 +1,5 @@
 import Pikoman from './pikoman';
-import {AllEvents, Channel, EventsHandler, PresenceChannel, PrivateChannel} from "./channel";
+import {AllEvents, Channel, EncryptedChannel, EventsHandler, PresenceChannel, PrivateChannel} from "./channel";
 import {AllListener, EventsListener, StringEventsListener} from "./listeners";
 import {
     MessageType,
@@ -10,14 +10,38 @@ import {
     ClientMessage,
     ServerMessage,
     ErrorCode,
+    ClientErrorCode,
+    JoinAuthorization,
 } from './types';
-import {OfflineAuthenticator, HttpAuthenticator} from './authenticators';
-import {importSigningKey, signToken} from './authenticators/offline_authenticator';
+import {OfflineAuthenticator, HttpAuthenticator, MasterKeyAuthenticator} from './authenticators';
+import {
+    importSigningKey,
+    importSeed,
+    importSecret,
+    parseSecret,
+    signToken,
+    requestToken,
+    authorizationHeader,
+    MAX_TOKEN_LIFETIME,
+    KeyWithId,
+} from './keys';
+import {
+    channelKey,
+    importChannelKey,
+    encryptEvent,
+    decryptEvent,
+    isEncryptedChannel,
+    ENCRYPTED_PREFIX,
+    EncryptedData,
+    ChannelKey,
+} from './encryption';
+import {Rest, RestOptions, publish, DEFAULT_API_ADDRESS} from './rest';
 
 export {
     Channel,
     PrivateChannel,
     PresenceChannel,
+    EncryptedChannel,
     EventsHandler,
     AllEvents,
     MessageType,
@@ -26,13 +50,29 @@ export {
     Options,
     HttpAuthenticator,
     OfflineAuthenticator,
+    MasterKeyAuthenticator,
     importSigningKey,
+    importSeed,
+    importSecret,
+    parseSecret,
     signToken,
+    requestToken,
+    authorizationHeader,
+    MAX_TOKEN_LIFETIME,
+    channelKey,
+    importChannelKey,
+    encryptEvent,
+    decryptEvent,
+    isEncryptedChannel,
+    ENCRYPTED_PREFIX,
+    Rest,
+    publish,
+    DEFAULT_API_ADDRESS,
     AllListener,
     EventsListener,
     StringEventsListener,
     Pikoman
 };
 export type SendData = SendDataType;
-export type {ClientMessage, ServerMessage, ErrorCode};
+export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, EncryptedData, ChannelKey, RestOptions};
 export default Pikoman;

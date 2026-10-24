@@ -1,0 +1,188 @@
+/**
+ * @jest-environment node
+ */
+import {createPrivateKey, createPublicKey, webcrypto} from 'crypto';
+import {
+    OfflineAuthenticator,
+    parseSecret,
+    requestToken,
+    authorizationHeader,
+    Rest,
+} from '../src';
+import {installWebGlobals} from './web_globals';
+
+// Test keys only: the seed of sevens, as in the server's tests. Never used for a real app.
+const SEED = Buffer.alloc(32, 7);
+const KEY_ID = 'k_3f9a1c0e5b7d2468';
+const SECRET = `sk_${KEY_ID}.${SEED.toString('base64url')}`;
+const PKCS8_BASE64 = 'MC4CAQAwBQYDK2VwBCIEIAcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH';
+
+function decode(part: string): any {
+    return JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+}
+
+/** Checks a JWT's signature with the public key of the seed of sevens, through Web Crypto. */
+async function verify(token: string): Promise<boolean> {
+    const der = createPublicKey(createPrivateKey({key: Buffer.from(PKCS8_BASE64, 'base64'), format: 'der', type: 'pkcs8'}))
+        .export({type: 'spki', format: 'der'}) as Buffer;
+    const publicKey = await webcrypto.subtle.importKey('raw', der.subarray(der.length - 32), {name: 'Ed25519'}, false, ['verify']);
+    const [header, payload, signature] = token.split('.');
+    return webcrypto.subtle.verify({name: 'Ed25519'}, publicKey, Buffer.from(signature, 'base64url'), Buffer.from(`${header}.${payload}`));
+}
+
+beforeAll(installWebGlobals);
+
+describe('API key secrets', () => {
+    it('Should read the key id and the seed', () => {
+        const {keyId, seed} = parseSecret(SECRET);
+        expect(keyId).toBe(KEY_ID);
+        expect(Buffer.from(seed)).toEqual(SEED);
+    });
+
+    it('Should refuse malformed secrets', () => {
+        const seed = SEED.toString('base64url');
+        const malformed = [
+            '',
+            seed,
+            `${KEY_ID}.${seed}`,                       // no sk_
+            `sk_${KEY_ID}${seed}`,                     // no dot
+            `sk_k_3F9A1C0E5B7D2468.${seed}`,           // upper-case hex
+            `sk_k_3f9a1c0e5b7d246.${seed}`,            // 15 hex
+            `sk_k_3f9a1c0e5b7d24680.${seed}`,          // 17 hex
+            `sk_x_3f9a1c0e5b7d2468.${seed}`,           // not k_
+            `sk_${KEY_ID}.${seed.slice(1)}`,           // 42 characters
+            `sk_${KEY_ID}.${seed}A`,                   // 44 characters
+            `sk_${KEY_ID}.${seed}=`,                   // padding
+            `sk_${KEY_ID}.${seed.slice(0, 42)}+`,      // standard base64
+            `sk_${KEY_ID}.${seed.slice(0, 42)}d`,      // a non-canonical last character
+            `sk_${KEY_ID}.${seed} extra`,
+        ];
+        for (const secret of malformed) {
+            expect(() => parseSecret(secret)).toThrow(/Not a Pikoman API key secret/);
+        }
+        expect(() => parseSecret(undefined as any)).toThrow();
+        expect(() => OfflineAuthenticator.fromSecret('sk_nope')).toThrow();
+        expect(() => new Rest({app: 'app-test', apiKey: 'sk_nope'})).toThrow();
+    });
+
+    it('Should not put the secret in the error', () => {
+        const secret = `sk_${KEY_ID}.${SEED.toString('base64url').slice(1)}`;
+        try {
+            parseSecret(secret);
+            throw new Error('parsed');
+        } catch (e) {
+            expect((e as Error).message).not.toContain(secret.slice(22));
+        }
+    });
+});
+
+describe('Request tokens', () => {
+    it('Should have the header and claims of KEYS.md and verify with the public key', async () => {
+        const before = Math.floor(Date.now() / 1000);
+        const token = await requestToken(SECRET, 'app-test');
+        const [header, payload] = token.split('.');
+        expect(decode(header)).toEqual({alg: 'EdDSA', typ: 'JWT', kid: KEY_ID});
+        const claims = decode(payload);
+        expect(Object.keys(claims).sort()).toEqual(['exp', 'iat', 'iss']);
+        expect(claims.iss).toBe('app-test');
+        expect(claims.iat).toBeGreaterThanOrEqual(before);
+        expect(claims.exp - claims.iat).toBe(300);
+        expect(await verify(token)).toBe(true);
+    });
+
+    it('Should not verify after a change', async () => {
+        const token = await requestToken(SECRET, 'app-test');
+        const [header, , signature] = token.split('.');
+        const forged = Buffer.from(JSON.stringify({iss: 'app-other', iat: 1, exp: 2})).toString('base64url');
+        expect(await verify(`${header}.${forged}.${signature}`)).toBe(false);
+    });
+
+    it('Should live at most ten minutes', async () => {
+        const token = await requestToken(SECRET, 'app-test', 600);
+        const claims = decode(token.split('.')[1]);
+        expect(claims.exp - claims.iat).toBe(600);
+        await expect(requestToken(SECRET, 'app-test', 601)).rejects.toThrow();
+        await expect(requestToken(SECRET, 'app-test', 0)).rejects.toThrow();
+        await expect(requestToken(SECRET, '')).rejects.toThrow();
+    });
+
+    it('Should make the Authorization header', async () => {
+        const header = await authorizationHeader(SECRET, 'app-test');
+        expect(header).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
+        expect(await verify(header.slice('Bearer '.length))).toBe(true);
+    });
+});
+
+describe('Join tokens with kid', () => {
+    it('Should keep the old constructor and a header without kid', async () => {
+        const token = await new OfflineAuthenticator({name: 'Anna'}, PKCS8_BASE64, 3).authenticate('c_1', 'presence-room');
+        expect(decode(token.split('.')[0])).toEqual({alg: 'EdDSA', typ: 'JWT'});
+        expect(await verify(token)).toBe(true);
+    });
+
+    it('Should put a signing key id in the header', async () => {
+        const token = await new OfflineAuthenticator(null, PKCS8_BASE64, 0, 's_0123456789abcdef').authenticate('c_1', 'private-a');
+        expect(decode(token.split('.')[0])).toEqual({alg: 'EdDSA', typ: 'JWT', kid: 's_0123456789abcdef'});
+        expect(await verify(token)).toBe(true);
+    });
+
+    it('Should sign as a bot with an API key', async () => {
+        const token = await OfflineAuthenticator.fromSecret(SECRET, {bot: 'berries'}, 3).authenticate('c_bot', 'presence-garden');
+        const [header, payload] = token.split('.');
+        expect(decode(header)).toEqual({alg: 'EdDSA', typ: 'JWT', kid: KEY_ID});
+        expect(decode(payload)).toMatchObject({connection: 'c_bot', channel: 'presence-garden', access: 3, data: {bot: 'berries'}});
+        expect(await verify(token)).toBe(true);
+    });
+});
+
+describe('Rest', () => {
+    const realFetch = (globalThis as any).fetch;
+    afterEach(() => {
+        (globalThis as any).fetch = realFetch;
+    });
+
+    it('Should publish with a bearer token, and reuse it', async () => {
+        const calls: any[] = [];
+        (globalThis as any).fetch = async (url: string, init: any) => {
+            calls.push({url, init});
+            return {ok: true, status: 202, json: async () => ({})};
+        };
+        const rest = new Rest({app: 'app-test', apiKey: SECRET, address: 'https://api.example/'});
+        await rest.publish('orders', 'order shipped', {id: 1042});
+        await rest.publish('orders', 'again', null);
+        expect(calls[0].url).toBe('https://api.example/orders/order%20shipped');
+        expect(calls[0].init.method).toBe('POST');
+        expect(calls[0].init.body).toBe('{"id":1042}');
+        const authorization = calls[0].init.headers.Authorization;
+        expect(await verify(authorization.slice('Bearer '.length))).toBe(true);
+        expect(calls[1].init.headers.Authorization).toBe(authorization);
+    });
+
+    it('Should use next-api.pikoman.se by default', async () => {
+        const urls: string[] = [];
+        (globalThis as any).fetch = async (url: string) => {
+            urls.push(url);
+            return {ok: true, status: 202, json: async () => ({})};
+        };
+        await new Rest({app: 'app-test', apiKey: SECRET}).publish('orders', 'x', 1);
+        expect(urls).toEqual(['https://next-api.pikoman.se/orders/x']);
+    });
+
+    it('Should say why a publish failed', async () => {
+        (globalThis as any).fetch = async () => ({ok: false, status: 403, json: async () => ({error: 'Not allowed'})});
+        const rest = new Rest({app: 'app-test', apiKey: SECRET});
+        await expect(rest.publish('orders', 'x', 1)).rejects.toThrow('403 Not allowed');
+    });
+
+    it('Should encrypt for encrypted channels, and refuse without a master key', async () => {
+        const bodies: any[] = [];
+        (globalThis as any).fetch = async (_url: string, init: any) => {
+            bodies.push(JSON.parse(init.body));
+            return {ok: true, status: 202, json: async () => ({})};
+        };
+        const master = Buffer.alloc(32, 1).toString('base64');
+        await new Rest({app: 'app-test', apiKey: SECRET, encryptionKey: master}).publish('private-encrypted-room', 'msg', {text: 'hi'});
+        expect(Object.keys(bodies[0]).sort()).toEqual(['ciphertext', 'nonce']);
+        await expect(new Rest({app: 'app-test', apiKey: SECRET}).publish('private-encrypted-room', 'msg', 1)).rejects.toThrow(/master key/);
+    });
+});
