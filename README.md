@@ -34,6 +34,7 @@ pikoman.listen("orders").on("order-shipped", (data) => console.log(data.id));
 const room = pikoman.listenPresence("presence-room");
 room.on("typing", (from, data) => console.log(from, data)); // events from other members: sender first
 room.send("typing", { on: true });                            // a third argument true also echoes it to you
+room.members((members) => console.log([...members.values()]));  // Map of connection id to member data
 
 // Private: only for those your backend signs a token for.
 pikoman.listenPrivate("private-user-123").on("notification", (data) => console.log(data));
@@ -98,6 +99,28 @@ pikoman.listenPresence("presence-room", bot);
 ```
 
 `parseSecret(secret)` reads an `sk_` secret into `{ keyId, seed }` and throws on anything malformed.
+
+### Bots in presence channels
+
+A member that joined with an API key is a bot. The server says so next to the member data, never in
+it: member data is the app's own, exactly as the join token gave it, so a user whose data says
+`"bot": true` is not a bot. Only the server's list can be trusted, and the presence channel keeps it
+in step with joins and leaves:
+
+```js
+const room = pikoman.listenPresence("presence-room");
+room.isBot(id);    // true only for members that joined with an API key
+room.botKey(id);   // the id of the API key a bot joined with ("k_…"), undefined for everyone else
+room.getBots();    // Map of connection id to key id
+
+// Who sent a client event: the relay sets `from`, so this tells a bot from a person.
+room.on("status", (from, data) => {
+  if (room.isBot(from)) console.log(`bot ${room.botKey(from)}:`, data);
+});
+```
+
+Over HTTP, `GET /{channel}/clients` answers `{"clients": {id: data}, "bots": {id: key id}}`, with
+`bots` left out when there are none.
 
 ## End-to-end encrypted channels
 

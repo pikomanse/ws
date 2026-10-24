@@ -233,9 +233,14 @@ export class PrivateChannel extends Channel {
 	}
 }
 
-/** A `presence-` channel: a private channel that also keeps track of who is in it. */
+/**
+ * A `presence-` channel: a private channel that also keeps track of who is in it, and which members
+ * are bots. Member data is the app's own, exactly as its token said; only the server's list of bots
+ * says who joined with an API key.
+ */
 export class PresenceChannel extends PrivateChannel {
 	private membersMap: Map<string, any> = new Map();
+	private botsMap: Map<string, string> = new Map();
 
 	get me() {
 		return this.getMember(this.pikoman.getClientId());
@@ -259,6 +264,21 @@ export class PresenceChannel extends PrivateChannel {
 
 	setMembers(members: Map<string, any>) {
 		this.membersMap = members;
+	}
+
+	/** The members that are bots: connection id to the id of the API key each joined with. */
+	getBots() {
+		return this.botsMap;
+	}
+
+	/** Whether a member joined as a bot, with an API key. Never from the member's data. */
+	isBot(userId: string) {
+		return this.botsMap.has(userId);
+	}
+
+	/** The id of the API key a bot joined with; `undefined` for everyone else. */
+	botKey(userId: string) {
+		return this.botsMap.get(userId);
 	}
 
 	/** Someone joined: `fn(MessageType.Subscribe, count, clientId, data)`. */
@@ -296,6 +316,11 @@ export class PresenceChannel extends PrivateChannel {
 			}
 			case "member_joined": {
 				this.addMember(message.id, message.data);
+				if (message.bot !== undefined) {
+					this.botsMap.set(message.id, message.bot);
+				} else {
+					this.botsMap.delete(message.id);
+				}
 				this.opcodes.dispatch(MessageType.Subscribe, [
 					MessageType.Subscribe,
 					message.count,
@@ -307,6 +332,7 @@ export class PresenceChannel extends PrivateChannel {
 			}
 			case "member_left": {
 				this.removeMember(message.id);
+				this.botsMap.delete(message.id);
 				this.opcodes.dispatch(MessageType.Unsubscribe, [
 					MessageType.Unsubscribe,
 					message.count,
@@ -317,6 +343,7 @@ export class PresenceChannel extends PrivateChannel {
 			}
 			case "members": {
 				this.setMembers(new Map(Object.entries(message.members)));
+				this.botsMap = new Map(Object.entries(message.bots ?? {}));
 				this.opcodes.dispatch(MessageType.ClientsInChannel, [this.getMembers()]);
 				break;
 			}

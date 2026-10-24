@@ -76,8 +76,8 @@ export type ServerMessage =
     | { op: 'connected', id: string }
     | { op: 'joined', channel: string }
     | { op: 'left', channel: string }
-    | { op: 'members', channel: string, members: Record<string, any> }
-    | { op: 'member_joined', channel: string, count: number, id: string, data: any }
+    | { op: 'members', channel: string, members: Record<string, any>, bots?: Record<string, string> }
+    | { op: 'member_joined', channel: string, count: number, id: string, data: any, bot?: string }
     | { op: 'member_left', channel: string, count: number, id: string }
     | { op: 'event', channel: string, event?: string, data: any }
     | { op: 'client_event', channel: string, from: string, event: string, data: any }

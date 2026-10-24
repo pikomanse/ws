@@ -180,6 +180,92 @@ describe('Private and presence channels', () => {
     expect(members.callCount).toBe(3);
   });
 
+  it('Should know which members are bots from the server list, not from member data', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    receive({
+      op: 'members',
+      channel: 'presence-room',
+      members: {c_anna: {name: 'Anna', bot: true}, c_bot: {name: 'Order bot'}},
+      bots: {c_bot: 'k_3f9a1c0e5b7d2468'},
+    });
+    // Member data is passed on exactly as the app made it.
+    expect(channel.getMember('c_anna')).toEqual({name: 'Anna', bot: true});
+    expect(channel.getMember('c_bot')).toEqual({name: 'Order bot'});
+    // Anna's "bot": true is only her app data: she is not a bot.
+    expect(channel.isBot('c_anna')).toBe(false);
+    expect(channel.botKey('c_anna')).toBeUndefined();
+    expect(channel.isBot('c_bot')).toBe(true);
+    expect(channel.botKey('c_bot')).toBe('k_3f9a1c0e5b7d2468');
+    expect([...channel.getBots()]).toEqual([['c_bot', 'k_3f9a1c0e5b7d2468']]);
+  });
+
+  it('Should have no bots when members has no bots', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    receive({op: 'members', channel: 'presence-room', members: {c_bot: {}}, bots: {c_bot: 'k_1'}});
+    receive({op: 'members', channel: 'presence-room', members: {c_anna: {name: 'Anna'}}});
+    expect(channel.getBots().size).toBe(0);
+    expect(channel.isBot('c_bot')).toBe(false);
+  });
+
+  it('Should add a bot on member_joined with bot, and not without it', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    const clients = sinon.spy();
+    channel.clients(clients);
+    receive({op: 'members', channel: 'presence-room', members: {}});
+
+    receive({op: 'member_joined', channel: 'presence-room', count: 1, id: 'c_bot', data: {name: 'Order bot'}, bot: 'k_3f9a1c0e5b7d2468'});
+    receive({op: 'member_joined', channel: 'presence-room', count: 2, id: 'c_anna', data: {name: 'Anna', bot: true}});
+
+    expect(channel.getMember('c_bot')).toEqual({name: 'Order bot'});
+    expect(channel.botKey('c_bot')).toBe('k_3f9a1c0e5b7d2468');
+    expect(channel.getMember('c_anna')).toEqual({name: 'Anna', bot: true});
+    expect(channel.isBot('c_anna')).toBe(false);
+    // The callbacks keep their shape: the data as received, nothing merged into it.
+    expect(clients.args).toEqual([
+      [MessageType.Subscribe, 1, 'c_bot', {name: 'Order bot'}],
+      [MessageType.Subscribe, 2, 'c_anna', {name: 'Anna', bot: true}],
+    ]);
+  });
+
+  it('Should know a bot is a bot inside the join callback', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    const seen = [];
+    channel.subscribe((_type, _count, id) => seen.push([id, channel.botKey(id)]));
+    receive({op: 'member_joined', channel: 'presence-room', count: 1, id: 'c_bot', data: {}, bot: 'k_1'});
+    receive({op: 'member_joined', channel: 'presence-room', count: 2, id: 'c_anna', data: {}});
+    expect(seen).toEqual([['c_bot', 'k_1'], ['c_anna', undefined]]);
+  });
+
+  it('Should forget a bot when it leaves', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    receive({op: 'members', channel: 'presence-room', members: {c_bot: {name: 'Order bot'}}, bots: {c_bot: 'k_1'}});
+    receive({op: 'member_left', channel: 'presence-room', count: 0, id: 'c_bot'});
+    expect(channel.getMember('c_bot')).toBeUndefined();
+    expect(channel.isBot('c_bot')).toBe(false);
+    expect(channel.getBots().size).toBe(0);
+  });
+
+  it('Should tell whether a client event came from a bot', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    receive({
+      op: 'members',
+      channel: 'presence-room',
+      members: {c_anna: {name: 'Anna', bot: true}, c_bot: {name: 'Order bot'}},
+      bots: {c_bot: 'k_1'},
+    });
+    const fromBot = [];
+    channel.on('status', (from, data) => fromBot.push([from, channel.isBot(from), data]));
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_bot', event: 'status', data: 'shipped'});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_anna', event: 'status', data: 'shipped'});
+    expect(fromBot).toEqual([['c_bot', true, 'shipped'], ['c_anna', false, 'shipped']]);
+  });
+
   it('Should join again with a new token after reconnecting', async () => {
     const {pikoman, socket, receive} = connect('c_first');
     pikoman.listenPresence('presence-room', tokenAuthenticator);
