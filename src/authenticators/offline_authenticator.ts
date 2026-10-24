@@ -1,5 +1,9 @@
 import {Authenticator} from "../types";
-import {importSeed, importSigningKey, parseSecret, signToken} from "../keys";
+import {importSigningKey, signToken, startSecretImport} from "../keys";
+import {INSPECT} from "../redact";
+
+/** The signing key of each authenticator, out of reach of JSON.stringify and util.inspect. */
+const signingKeys = new WeakMap<OfflineAuthenticator, Promise<CryptoKey>>();
 
 /**
  * Signs join tokens without asking a backend.
@@ -28,7 +32,6 @@ export function authChannelWithKey(clientId: string, channelName: string, data: 
 
 export default class OfflineAuthenticator implements Authenticator {
     private readonly data: any;
-    private readonly signingKey: Promise<CryptoKey>;
     private readonly permissions: number;
     private readonly keyId?: string;
 
@@ -39,9 +42,10 @@ export default class OfflineAuthenticator implements Authenticator {
      */
     constructor(data: any, privateKey: string | CryptoKey | Promise<CryptoKey>, permissions: number, keyId?: string) {
         this.data = data;
-        this.signingKey = typeof privateKey === 'string' ? importSigningKey(privateKey) : Promise.resolve(privateKey);
+        const signingKey = typeof privateKey === 'string' ? importSigningKey(privateKey) : Promise.resolve(privateKey);
         // Keep an unread key from being an unhandled rejection; authenticate() still throws.
-        this.signingKey.catch(() => undefined);
+        signingKey.catch(() => undefined);
+        signingKeys.set(this, signingKey);
         this.permissions = permissions;
         this.keyId = keyId;
     }
@@ -51,11 +55,20 @@ export default class OfflineAuthenticator implements Authenticator {
      * access 3 (`permissions`) also needs `client_events`. Throws at once if the secret is malformed.
      */
     static fromSecret(secret: string, data: any = null, permissions = 0): OfflineAuthenticator {
-        const {keyId, seed} = parseSecret(secret);
-        return new OfflineAuthenticator(data, importSeed(seed), permissions, keyId);
+        const {keyId, key} = startSecretImport(secret);
+        return new OfflineAuthenticator(data, key, permissions, keyId);
     }
 
     async authenticate(clientId: string, channelName: string, _options = {}): Promise<string> {
-        return authChannelWithKey(clientId, channelName, this.data, await this.signingKey, this.permissions, 300, this.keyId);
+        return authChannelWithKey(clientId, channelName, this.data, await (signingKeys.get(this) as Promise<CryptoKey>), this.permissions, 300, this.keyId);
+    }
+
+    /** What JSON.stringify shows: never the key. */
+    toJSON() {
+        return {keyId: this.keyId ?? null, permissions: this.permissions, signingKey: '[hidden]'};
+    }
+
+    [INSPECT]() {
+        return `OfflineAuthenticator { keyId: ${JSON.stringify(this.keyId ?? null)}, permissions: ${this.permissions}, signingKey: [hidden] }`;
     }
 }

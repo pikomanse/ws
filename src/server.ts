@@ -19,11 +19,12 @@ export type {KeyWithId} from './keys';
 export {
     channelKey,
     importChannelKey,
+    importMasterKey,
     encryptEvent,
     decryptEvent,
     isEncryptedChannel,
     ENCRYPTED_PREFIX,
 } from './encryption';
-export type {EncryptedData, ChannelKey, Direction} from './encryption';
+export type {EncryptedData, ChannelKey, MasterKey, Direction} from './encryption';
 export {default as OfflineAuthenticator} from './authenticators/offline_authenticator';
 export {default as MasterKeyAuthenticator} from './authenticators/master_key_authenticator';

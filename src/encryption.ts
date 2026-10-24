@@ -31,16 +31,46 @@ function isCryptoKey(key: any): key is CryptoKey {
     return typeof key === 'object' && key !== null && !(key instanceof Uint8Array) && 'algorithm' in key && 'type' in key;
 }
 
+/** The app's 32-byte master key: base64, bytes, or an HMAC CryptoKey from `importMasterKey`. */
+export type MasterKey = string | Uint8Array | CryptoKey;
+
+/**
+ * Starts importing the master key as a non-extractable HMAC-SHA256 key. Checks it at once (throws
+ * here, without echoing the key), and wipes the bytes it decoded from base64 once Web Crypto has
+ * copied them, so no raw copy of the key is kept. Bytes the caller passed are left alone.
+ */
+export function startMasterKeyImport(masterKey: MasterKey): Promise<CryptoKey> {
+    if (isCryptoKey(masterKey)) {
+        if (masterKey.algorithm.name !== 'HMAC') {
+            throw new Error('The master key is an HMAC key');
+        }
+        return Promise.resolve(masterKey);
+    }
+    const bytes = keyBytes(masterKey);
+    try {
+        if (bytes.length !== 32) {
+            throw new Error('The master key is 32 bytes');
+        }
+        // Web Crypto copies the bytes when it is called, before the promise settles.
+        return subtle().importKey('raw', bytes, {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+    } finally {
+        if (typeof masterKey === 'string') {
+            bytes.fill(0);
+        }
+    }
+}
+
+/** Imports the master key as a non-extractable HMAC-SHA256 CryptoKey, to keep instead of its bytes. */
+export async function importMasterKey(masterKey: MasterKey): Promise<CryptoKey> {
+    return startMasterKeyImport(masterKey);
+}
+
 /**
  * The channel key for one channel, as base64 (what a token endpoint answers in `channel_key`).
- * `masterKey` is the app's 32-byte master key, base64 or bytes.
+ * `masterKey` is the app's 32-byte master key, base64 or bytes, or the CryptoKey from `importMasterKey`.
  */
-export async function channelKey(masterKey: string | Uint8Array, channel: string): Promise<string> {
-    const master = keyBytes(masterKey);
-    if (master.length !== 32) {
-        throw new Error('The master key is 32 bytes');
-    }
-    const hmac = await subtle().importKey('raw', master, {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+export async function channelKey(masterKey: MasterKey, channel: string): Promise<string> {
+    const hmac = await importMasterKey(masterKey);
     return toBase64(new Uint8Array(await subtle().sign('HMAC', hmac, utf8(channel))));
 }
 

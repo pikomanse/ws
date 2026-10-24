@@ -28,12 +28,14 @@ import {
 import {
     channelKey,
     importChannelKey,
+    importMasterKey,
     encryptEvent,
     decryptEvent,
     isEncryptedChannel,
     ENCRYPTED_PREFIX,
     EncryptedData,
     ChannelKey,
+    MasterKey,
     Direction,
 } from './encryption';
 import {Rest, RestOptions, publish, DEFAULT_API_ADDRESS} from './rest';
@@ -62,6 +64,7 @@ export {
     MAX_TOKEN_LIFETIME,
     channelKey,
     importChannelKey,
+    importMasterKey,
     encryptEvent,
     decryptEvent,
     isEncryptedChannel,
@@ -75,5 +78,5 @@ export {
     Pikoman
 };
 export type SendData = SendDataType;
-export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, EncryptedData, ChannelKey, Direction, RestOptions};
+export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions};
 export default Pikoman;

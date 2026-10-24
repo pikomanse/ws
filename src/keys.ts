@@ -22,7 +22,12 @@ export interface KeyWithId {
 /** Imports a PKCS#8 private key: PEM, or base64 DER on one line (`MC4CAQAwBQYDK2VwBCIEI…`). */
 export function importSigningKey(privateKey: string): Promise<CryptoKey> {
     const base64 = privateKey.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, '').replace(/\s+/g, '');
-    return subtle().importKey('pkcs8', fromBase64(base64), {name: 'Ed25519'}, false, ['sign']);
+    const der = fromBase64(base64);
+    try {
+        return subtle().importKey('pkcs8', der, {name: 'Ed25519'}, false, ['sign']);
+    } finally {
+        der.fill(0);
+    }
 }
 
 /** Imports a 32-byte Ed25519 seed as a private key. */
@@ -33,7 +38,12 @@ export function importSeed(seed: Uint8Array): Promise<CryptoKey> {
     const pkcs8 = new Uint8Array(PKCS8_ED25519_PREFIX.length + 32);
     pkcs8.set(PKCS8_ED25519_PREFIX);
     pkcs8.set(seed, PKCS8_ED25519_PREFIX.length);
-    return subtle().importKey('pkcs8', pkcs8, {name: 'Ed25519'}, false, ['sign']);
+    try {
+        // Non-extractable. Web Crypto copies the bytes when it is called, so this copy is wiped.
+        return subtle().importKey('pkcs8', pkcs8, {name: 'Ed25519'}, false, ['sign']);
+    } finally {
+        pkcs8.fill(0);
+    }
 }
 
 const SECRET = /^sk_(k_[0-9a-f]{16})\.([A-Za-z0-9_-]{43})$/;
@@ -57,8 +67,21 @@ export function parseSecret(secret: string): { keyId: string, seed: Uint8Array }
 
 /** Imports an API key's secret: the private key, and its id for the `kid`. */
 export async function importSecret(secret: string): Promise<{ keyId: string, key: CryptoKey }> {
+    const {keyId, key} = startSecretImport(secret);
+    return {keyId, key: await key};
+}
+
+/**
+ * Checks an API key's secret at once (throws here) and starts importing it, wiping the decoded
+ * seed as soon as Web Crypto has its copy. The key is non-extractable.
+ */
+export function startSecretImport(secret: string): { keyId: string, key: Promise<CryptoKey> } {
     const {keyId, seed} = parseSecret(secret);
-    return {keyId, key: await importSeed(seed)};
+    try {
+        return {keyId, key: importSeed(seed)};
+    } finally {
+        seed.fill(0);
+    }
 }
 
 const encodeJson = (value: object) => toBase64Url(utf8(JSON.stringify(value)));

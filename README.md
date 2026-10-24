@@ -131,6 +131,10 @@ const auth = new MasterKeyAuthenticator(
 pikoman.listenPrivate("private-encrypted-team-7", auth);
 ```
 
+`Rest`, `MasterKeyAuthenticator` and `OfflineAuthenticator` keep their keys only as
+non-extractable Web Crypto keys, and `JSON.stringify` or `console.log` of them shows `[hidden]`
+instead of a key or a token. `importMasterKey(base64)` gives such a key for `channelKey` too.
+
 `publish` and `Rest` encrypt by themselves for these channels when they have the master key. By
 hand: `encryptEvent(channel, event, data, channelKey, direction = "server")` gives
 `{ nonce, ciphertext }` and `decryptEvent(channel, event, encrypted, channelKey, direction = "server")`

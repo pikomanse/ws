@@ -1,6 +1,9 @@
 import {Authenticator, JoinAuthorization, Options} from "../types";
-import {channelKey, isEncryptedChannel} from "../encryption";
-import {keyBytes} from "../encoding";
+import {channelKey, isEncryptedChannel, MasterKey, startMasterKeyImport} from "../encryption";
+import {INSPECT} from "../redact";
+
+/** The master key of each authenticator, out of reach of JSON.stringify and util.inspect. */
+const masterKeys = new WeakMap<MasterKeyAuthenticator, Promise<CryptoKey>>();
 
 /**
  * For a program that holds the app's master key (a backend, or a bot with an API key): gets the
@@ -14,18 +17,18 @@ import {keyBytes} from "../encoding";
  * );
  * pikoman.listenPrivate("private-encrypted-orders", auth);
  * ```
+ *
+ * The master key is kept only as a non-extractable HMAC CryptoKey, never as bytes.
  */
 export default class MasterKeyAuthenticator implements Authenticator {
     private readonly inner: Authenticator;
-    private readonly masterKey: Uint8Array;
 
-    /** `masterKey`: the app's 32-byte master key, base64 or bytes. */
-    constructor(inner: Authenticator, masterKey: string | Uint8Array) {
+    /** `masterKey`: the app's 32-byte master key, base64 or bytes, or the CryptoKey from `importMasterKey`. */
+    constructor(inner: Authenticator, masterKey: MasterKey) {
         this.inner = inner;
-        this.masterKey = keyBytes(masterKey);
-        if (this.masterKey.length !== 32) {
-            throw new Error('The master key is 32 bytes');
-        }
+        const key = startMasterKeyImport(masterKey);
+        key.catch(() => undefined);
+        masterKeys.set(this, key);
     }
 
     async authenticate(clientId: string, channelName: string, options: Options): Promise<string | JoinAuthorization> {
@@ -34,6 +37,14 @@ export default class MasterKeyAuthenticator implements Authenticator {
         if (!isEncryptedChannel(channelName)) {
             return token;
         }
-        return {token, channel_key: await channelKey(this.masterKey, channelName)};
+        return {token, channel_key: await channelKey(await (masterKeys.get(this) as Promise<CryptoKey>), channelName)};
+    }
+
+    toJSON() {
+        return {masterKey: '[hidden]'};
+    }
+
+    [INSPECT]() {
+        return 'MasterKeyAuthenticator { masterKey: [hidden] }';
     }
 }

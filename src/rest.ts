@@ -2,8 +2,9 @@
  * The HTTP API, for Node backends, scripts and tools. Never in a browser: the API key would be in
  * the page. Requests carry `Authorization: Bearer <jwt>` signed with an API key (KEYS.md).
  */
-import {importSeed, KeyWithId, parseSecret, requestToken} from './keys';
-import {encryptEvent, isEncryptedChannel, channelKey} from './encryption';
+import {KeyWithId, requestToken, startSecretImport} from './keys';
+import {encryptEvent, isEncryptedChannel, channelKey, startMasterKeyImport} from './encryption';
+import {INSPECT} from './redact';
 
 export const DEFAULT_API_ADDRESS = 'https://next-api.pikoman.se';
 
@@ -27,12 +28,22 @@ function env(name: string): string | undefined {
     return process && process.env ? process.env[name] : undefined;
 }
 
+/**
+ * What a Rest holds that must not be seen: the API key, the master key (both non-extractable
+ * CryptoKeys, no raw bytes kept) and the cached request token. In a WeakMap, so neither
+ * JSON.stringify nor util.inspect of a Rest can reach them.
+ */
+interface Secrets {
+    key: Promise<KeyWithId>;
+    masterKey?: Promise<CryptoKey>;
+    token?: { value: string, until: number };
+}
+
+const secrets = new WeakMap<Rest, Secrets>();
+
 export class Rest {
     private readonly app: string;
-    private readonly key: Promise<KeyWithId>;
-    private readonly encryptionKey?: string;
     private readonly address: string;
-    private token?: { value: string, until: number };
 
     constructor(options: RestOptions = {}) {
         const app = options.app ?? env('PIKOMAN_APP');
@@ -44,20 +55,36 @@ export class Rest {
             throw new Error('Need an API key (option apiKey, or PIKOMAN_API_KEY)');
         }
         this.app = app;
-        const {keyId, seed} = parseSecret(apiKey);
-        this.key = importSeed(seed).then((key) => ({keyId, key}));
-        this.key.catch(() => undefined);
-        this.encryptionKey = options.encryptionKey ?? env('PIKOMAN_ENCRYPTION_KEY');
+        const {keyId, key} = startSecretImport(apiKey);
+        const secret: Secrets = {key: key.then((imported) => ({keyId, key: imported}))};
+        secret.key.catch(() => undefined);
+        const encryptionKey = options.encryptionKey ?? env('PIKOMAN_ENCRYPTION_KEY');
+        if (encryptionKey) {
+            // A malformed master key is reported when an encrypted channel needs it, not here,
+            // so a Rest for plain channels keeps working.
+            try {
+                secret.masterKey = startMasterKeyImport(encryptionKey);
+            } catch (e) {
+                secret.masterKey = Promise.reject(e);
+            }
+            secret.masterKey.catch(() => undefined);
+        }
+        secrets.set(this, secret);
         this.address = (options.address ?? DEFAULT_API_ADDRESS).replace(/\/+$/, '');
+    }
+
+    private get secret(): Secrets {
+        return secrets.get(this) as Secrets;
     }
 
     /** `Bearer <jwt>`, a fresh token every four minutes. */
     async authorization(): Promise<string> {
+        const secret = this.secret;
         const now = Date.now() / 1000;
-        if (!this.token || this.token.until <= now) {
-            this.token = {value: await requestToken(await this.key, this.app, TOKEN_LIFETIME), until: now + TOKEN_REUSE};
+        if (!secret.token || secret.token.until <= now) {
+            secret.token = {value: await requestToken(await secret.key, this.app, TOKEN_LIFETIME), until: now + TOKEN_REUSE};
         }
-        return `Bearer ${this.token.value}`;
+        return `Bearer ${secret.token.value}`;
     }
 
     /**
@@ -67,10 +94,11 @@ export class Rest {
     async publish(channel: string, event: string, data: any): Promise<void> {
         let body = data === undefined ? null : data;
         if (isEncryptedChannel(channel)) {
-            if (!this.encryptionKey) {
+            const masterKey = this.secret.masterKey;
+            if (!masterKey) {
                 throw new Error(`${channel} is encrypted: need the master key (option encryptionKey, or PIKOMAN_ENCRYPTION_KEY)`);
             }
-            body = await encryptEvent(channel, event, body, await channelKey(this.encryptionKey, channel), 'server');
+            body = await encryptEvent(channel, event, body, await channelKey(await masterKey, channel), 'server');
         }
         const response = await fetch(`${this.address}/${encodeURIComponent(channel)}/${encodeURIComponent(event)}`, {
             method: 'POST',
@@ -86,6 +114,15 @@ export class Rest {
             }
             throw new Error(`Pikoman: publish to ${channel} failed: ${response.status}${reason ? ` ${reason}` : ''}`);
         }
+    }
+
+    /** What JSON.stringify shows: never the API key, the master key or the token. */
+    toJSON() {
+        return {app: this.app, address: this.address, apiKey: '[hidden]', encryptionKey: this.secret.masterKey ? '[hidden]' : null};
+    }
+
+    [INSPECT]() {
+        return `Rest { app: ${JSON.stringify(this.app)}, address: ${JSON.stringify(this.address)}, apiKey: [hidden]${this.secret.masterKey ? ', encryptionKey: [hidden]' : ''} }`;
     }
 }
 
