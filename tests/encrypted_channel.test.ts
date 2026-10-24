@@ -163,6 +163,43 @@ describe('Encrypted channels', () => {
         expect(refused.mock.calls).toEqual([['decrypt_failed'], ['decrypt_failed'], ['decrypt_failed']]);
     });
 
+    it('Should keep delivering after a handler throws, and throw its error on its own', async () => {
+        const thrown: unknown[] = [];
+        const realSetTimeout = g.setTimeout;
+        // Catches what is thrown from a timer, which would otherwise end the test run.
+        const timers = jest.spyOn(g, 'setTimeout').mockImplementation(((fn: Function, ms?: number, ...args: any[]) =>
+            realSetTimeout(() => {
+                try {
+                    fn(...args);
+                } catch (e) {
+                    thrown.push(e);
+                }
+            }, ms)) as any);
+        try {
+            const {pikoman, socket, receive} = connect();
+            const channel = pikoman.listenPrivate(CHANNEL, withKey);
+            await until(() => socket.sent.length > 0);
+            const seen: any[] = [];
+            channel.on('message', (data: any) => {
+                seen.push(data);
+                if (data === 1) {
+                    throw new Error('handler broke');
+                }
+            });
+            channel.refused(() => {
+                throw new Error('refused handler broke');
+            });
+            receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 1, TEST_CHANNEL_KEY)});
+            receive({op: 'event', channel: CHANNEL, event: 'message', data: {text: 'plain'}});
+            receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 2, TEST_CHANNEL_KEY)});
+            await until(() => seen.length >= 2 && thrown.length >= 2);
+            expect(seen).toEqual([1, 2]);
+            expect(thrown.map((e) => (e as Error).message)).toEqual(['handler broke', 'refused handler broke']);
+        } finally {
+            timers.mockRestore();
+        }
+    });
+
     it('Should not let a client event pass as the server, or back', async () => {
         const {pikoman, socket, receive} = connect();
         const channel = pikoman.listenPrivate(CHANNEL, withKey);

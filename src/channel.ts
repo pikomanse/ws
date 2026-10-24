@@ -360,18 +360,33 @@ export class EncryptedChannel extends PrivateChannel {
 						throw new Error("No channel key");
 					}
 					// What the backend published (op "event") and what members sent (op "client_event")
-						// are authenticated with different directions, so one cannot pose as the other.
-						const direction = message.op === "event" ? "server" : "client";
-						data = await decryptEvent(this.name, message.event ?? "", message.data, await this.key, direction);
+					// are authenticated with different directions, so one cannot pose as the other.
+					const direction = message.op === "event" ? "server" : "client";
+					data = await decryptEvent(this.name, message.event ?? "", message.data, await this.key, direction);
 				} catch (e) {
-					this.report("decrypt_failed");
+					this.outside(() => this.report("decrypt_failed"));
 					return;
 				}
-				super.handle({ ...message, data });
+				this.outside(() => super.handle({ ...message, data }));
 				return;
 			}
-			super.handle(message);
+			this.outside(() => super.handle(message));
 		});
+	}
+
+	/**
+	 * Runs the user's handlers. One that throws must not break the chain of incoming messages
+	 * (every later message would be skipped, and in Node the unhandled rejection ends the process),
+	 * so its error is thrown again on its own, as from any other event handler.
+	 */
+	private outside(run: () => void) {
+		try {
+			run();
+		} catch (e) {
+			setTimeout(() => {
+				throw e;
+			}, 0);
+		}
 	}
 
 	/**
