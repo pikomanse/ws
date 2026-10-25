@@ -18,7 +18,9 @@ export enum MessageType {
 export enum ConnectionStatus {
     Offline = 1,
     Loading = 2,
-    Online = 4
+    Online = 4,
+    /** Closed with 4403: the API key the connection signed in with was deleted. No reconnect. */
+    Revoked = 8
 }
 
 export type Fn = (...data: any) => void;
@@ -35,6 +37,12 @@ export interface MessageCallback<T extends number> {
 export interface Options {
     ws_address?: string;
     auth_url?: string;
+    /**
+     * When the server takes a channel away because the key that signed its token was deleted
+     * (`key_revoked`), join it again with a new token: after 1 s, 2 s and 4 s, then report
+     * `rejoin_failed`. On by default; `false` leaves it to the app (`channel.refused`).
+     */
+    rejoin_on_revoke?: boolean;
 }
 
 /**
@@ -63,7 +71,7 @@ export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels'
  * Codes `refused` also reports from the client itself, in encrypted channels: a message that did
  * not decrypt (dropped), or a join without a channel key (not sent).
  */
-export type ClientErrorCode = 'decrypt_failed' | 'no_channel_key';
+export type ClientErrorCode = 'decrypt_failed' | 'no_channel_key' | 'rejoin_failed';
 
 /** Messages the client sends. */
 export type ClientMessage =

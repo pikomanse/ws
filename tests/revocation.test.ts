@@ -100,3 +100,50 @@ describe('When the server revokes a key', () => {
         expect(FakeWebSocket.made).toBe(made + 1);
     });
 });
+
+describe('What the app is told', () => {
+    it('Should call revoked() after close code 4403, and offline() first', () => {
+        jest.useFakeTimers();
+        const {pikoman} = connect();
+        const order: string[] = [];
+        pikoman.offline(() => order.push('offline'));
+        pikoman.revoked(() => order.push('revoked'));
+        (pikoman as any).onClose({code: 4403});
+        expect(order).toEqual(['offline', 'revoked']);
+    });
+
+    it('Should not call revoked() after an ordinary close', () => {
+        jest.useFakeTimers();
+        const {pikoman} = connect();
+        const revoked = jest.fn();
+        pikoman.revoked(revoked);
+        (pikoman as any).onClose({code: 1006});
+        expect(revoked).not.toHaveBeenCalled();
+    });
+
+    it('Should report rejoin_failed when the new tokens are refused too', async () => {
+        jest.useFakeTimers();
+        const {pikoman, receive} = connect();
+        const channel = pikoman.listenPrivate('private-room', {authenticate: async () => 'old-token'});
+        const refused = jest.fn();
+        channel.refused(refused);
+        for (const wait of [1000, 2000, 4000, 0]) {
+            receive({op: 'error', channel: 'private-room', code: 'key_revoked'});
+            jest.advanceTimersByTime(wait);
+        }
+        expect(refused.mock.calls.map((c) => c[0])).toEqual(['key_revoked', 'key_revoked', 'key_revoked', 'key_revoked', 'rejoin_failed']);
+    });
+
+    it('Should leave key_revoked to the app with rejoin_on_revoke: false', async () => {
+        const pikoman = new Pikoman('app-test', {ws_address: 'ws://localhost', auth_url: '/auth', rejoin_on_revoke: false});
+        opened.push(pikoman);
+        const socket = FakeWebSocket.last;
+        const receive = (message: object) => (pikoman as any).onMessage({data: JSON.stringify(message)});
+        receive({op: 'connected', id: 'c_me'});
+        pikoman.listenPrivate('private-room', {authenticate: async () => 'token'});
+        await until(() => socket.sent.length === 1);
+        receive({op: 'error', channel: 'private-room', code: 'key_revoked'});
+        await new Promise((resolve) => setTimeout(resolve, 1300));
+        expect(socket.sent.length).toBe(1);
+    });
+});

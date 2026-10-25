@@ -122,6 +122,39 @@ room.on("status", (from, data) => {
 Over HTTP, `GET /{channel}/clients` answers `{"clients": {id: data}, "bots": {id: key id}}`, with
 `bots` left out when there are none.
 
+## Refusals, and when access is taken away
+
+Everything the server or the library refuses for a channel reaches `channel.refused(fn)` as a code.
+When a key is deleted or narrowed in the dashboard, the server acts at once, also on connections
+that only listen:
+
+| What changed | What the app gets |
+|---|---|
+| The API key a connection signed in with was deleted | `pikoman.revoked(fn)` (after `offline`): closed with 4403, no reconnect |
+| That API key was narrowed and no longer allows a channel | `refused("not_allowed")`, then the channel is left; the connection stays |
+| The signing key that signed a join token was deleted | `refused("key_revoked")`; the library joins again with a new token (1 s, 2 s, 4 s), then `refused("rejoin_failed")` |
+
+```js
+const pikoman = new Pikoman("app-123", {
+	auth_url: "/pikoman/auth",
+	// rejoin_on_revoke: false,  // handle key_revoked yourself, e.g. with room.join()
+});
+
+pikoman.revoked(() => showModal("Your access was removed."));  // 4403: stays offline
+pikoman.offline(() => showBanner("Reconnecting …"));          // any close; reconnects after 5 s
+
+const room = pikoman.listenPresence("presence-room");
+room.refused((code) => {
+	if (code === "key_revoked") showToast("Joining the room again …");
+	else if (code === "rejoin_failed") showModal("Could not join the room again. Reload the page.");
+	else if (code === "channel_full") showModal("The room is full.");
+	else console.warn("Pikoman:", code);  // not_allowed, join_refused, rate_limited, member_data_too_large, …
+});
+```
+
+A presence channel is full at 500 members, or when its member list would pass 64 KiB; a member's
+data may be at most 1 KiB. A connection may send at most 10 client events a second.
+
 ## End-to-end encrypted channels
 
 Channels named `private-encrypted-…` carry only ciphertext: Pikoman relays what it cannot read.

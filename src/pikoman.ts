@@ -22,7 +22,7 @@ export default class Pikoman {
 	private timeoutSendPing: any = 0;
 	private timeoutReconnect: any = 0;
 	/** Set by close code 4403 (the connection's API key was deleted): no reconnect after that. */
-	private revoked = false;
+	private closedForGood = false;
 	private status = ConnectionStatus.Loading;
 	private channels = new Map<string, Channel>();
 	private messages = new OpCodeHandler<ConnectionStatus>(this);
@@ -111,7 +111,7 @@ export default class Pikoman {
 	}
 
 	private reconnect(delay = 5000) {
-		if (this.revoked) return;
+		if (this.closedForGood) return;
 		this.ws.close();
 		clearTimeout(this.timeoutReconnect);
 		this.timeoutReconnect = setTimeout(() => {
@@ -179,10 +179,11 @@ export default class Pikoman {
 		// 4403: the API key this connection signed in with was deleted. Connecting again would only
 		// be refused again, so stay offline.
 		if ((data[0] as CloseEvent | undefined)?.code === 4403) {
-			this.revoked = true;
+			this.closedForGood = true;
 			clearTimeout(this.timeoutOffline);
 			clearTimeout(this.timeoutSendPing);
 			clearTimeout(this.timeoutReconnect);
+			this.messages.dispatch(ConnectionStatus.Revoked, [data[0]]);
 			return;
 		}
 		this.reconnect();
@@ -229,6 +230,20 @@ export default class Pikoman {
 
 	offline(fn: Fn) {
 		this.messages.on(ConnectionStatus.Offline, fn);
+	}
+
+	/**
+	 * The server closed the connection for good (4403): the API key it signed in with was deleted.
+	 * It does not reconnect; `fn(closeEvent)` is the place to tell the user, or to start again with
+	 * a new key. `offline` is called first, as for any close.
+	 */
+	revoked(fn: Fn) {
+		this.messages.on(ConnectionStatus.Revoked, fn);
+	}
+
+	/** Whether channels join again by themselves after `key_revoked` (`Options.rejoin_on_revoke`). */
+	rejoinsOnRevoke(): boolean {
+		return this.options.rejoin_on_revoke !== false;
 	}
 
 	join(fn: Fn) {

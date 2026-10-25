@@ -172,10 +172,15 @@ export class Channel {
 	/**
 	 * The key that signed this channel's join token was deleted, and the server took the channel
 	 * away. Join again, which asks the app's backend for a new token: after 1 s, then 2 s and 4 s if
-	 * that is refused too, then give up (the backend may still sign with the deleted key).
+	 * that is refused too, then report `rejoin_failed` (the backend may still sign with the deleted
+	 * key). With `rejoin_on_revoke: false` the app handles `key_revoked` itself.
 	 */
 	private rejoinAfterRevoke() {
-		if (this.revokedRetries >= 3) return;
+		if (!this.pikoman.rejoinsOnRevoke()) return;
+		if (this.revokedRetries >= 3) {
+			this.opcodes.dispatch(MessageType.Refused, ["rejoin_failed"]);
+			return;
+		}
 		clearTimeout(this.revokedTimer);
 		const delay = 1000 * 2 ** this.revokedRetries;
 		this.revokedRetries += 1;
