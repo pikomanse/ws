@@ -76,6 +76,9 @@ export class AllEvents {
 export class Channel {
 	protected readonly name: string;
 	protected readonly pikoman: Pikoman;
+	/** Joins tried since the server last took this channel away with `key_revoked`. */
+	private revokedRetries = 0;
+	private revokedTimer: any = 0;
 	protected opcodes = new OpCodeHandler<MessageType>(this);
 	protected messages: EventsHandler | AllEvents = new EventsHandler(this);
 
@@ -98,8 +101,13 @@ export class Channel {
 	}
 
 	leave() {
+		clearTimeout(this.revokedTimer);
+		// Through the client first, which forgets the channel and calls this again: one leave sent.
+		if (this.pikoman.hasChannel(this)) {
+			this.pikoman.leaveChannel(this.name);
+			return;
+		}
 		this.pikoman.send({ op: "leave", channel: this.name });
-		this.pikoman.leaveChannel(this.name);
 	}
 
 	/** Every event published to the channel over HTTP: `fn(data, event)`. */
@@ -139,6 +147,7 @@ export class Channel {
 				break;
 			}
 			case "joined": {
+				this.revokedRetries = 0;
 				this.opcodes.dispatch(MessageType.Subscribe, [MessageType.Subscribe]);
 				break;
 			}
@@ -157,6 +166,22 @@ export class Channel {
 			console.error(`Pikoman: not allowed to join ${this.name}`);
 		}
 		this.opcodes.dispatch(MessageType.Refused, [code]);
+		if (code === "key_revoked") this.rejoinAfterRevoke();
+	}
+
+	/**
+	 * The key that signed this channel's join token was deleted, and the server took the channel
+	 * away. Join again, which asks the app's backend for a new token: after 1 s, then 2 s and 4 s if
+	 * that is refused too, then give up (the backend may still sign with the deleted key).
+	 */
+	private rejoinAfterRevoke() {
+		if (this.revokedRetries >= 3) return;
+		clearTimeout(this.revokedTimer);
+		const delay = 1000 * 2 ** this.revokedRetries;
+		this.revokedRetries += 1;
+		this.revokedTimer = setTimeout(() => {
+			if (this.pikoman.hasChannel(this)) this.join();
+		}, delay);
 	}
 }
 

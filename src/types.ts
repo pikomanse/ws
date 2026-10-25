@@ -56,7 +56,8 @@ export interface Authenticator {
 }
 
 /** Codes from the server. */
-export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited' | 'not_encrypted';
+export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited' | 'not_encrypted'
+    | 'channel_full' | 'member_data_too_large' | 'key_revoked';
 
 /**
  * Codes `refused` also reports from the client itself, in encrypted channels: a message that did

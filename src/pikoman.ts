@@ -21,6 +21,8 @@ export default class Pikoman {
 	private timeoutOffline: any = 0;
 	private timeoutSendPing: any = 0;
 	private timeoutReconnect: any = 0;
+	/** Set by close code 4403 (the connection's API key was deleted): no reconnect after that. */
+	private revoked = false;
 	private status = ConnectionStatus.Loading;
 	private channels = new Map<string, Channel>();
 	private messages = new OpCodeHandler<ConnectionStatus>(this);
@@ -80,6 +82,15 @@ export default class Pikoman {
 		return `${this.options.ws_address}/${this.appId}`;
 	}
 
+	/** Whether this channel object is still one the app has joined (not left or replaced). */
+	hasChannel(channel: Channel): boolean {
+		let found = false;
+		this.channels.forEach((joined) => {
+			if (joined === channel) found = true;
+		});
+		return found;
+	}
+
 	private rejoin() {
 		this.channels.forEach((channel) => channel.join());
 	}
@@ -100,6 +111,7 @@ export default class Pikoman {
 	}
 
 	private reconnect(delay = 5000) {
+		if (this.revoked) return;
 		this.ws.close();
 		clearTimeout(this.timeoutReconnect);
 		this.timeoutReconnect = setTimeout(() => {
@@ -164,6 +176,15 @@ export default class Pikoman {
 		this.status = ConnectionStatus.Offline;
 		this.clientId = "";
 		this.messages.dispatch(ConnectionStatus.Offline, [false, ...data]);
+		// 4403: the API key this connection signed in with was deleted. Connecting again would only
+		// be refused again, so stay offline.
+		if ((data[0] as CloseEvent | undefined)?.code === 4403) {
+			this.revoked = true;
+			clearTimeout(this.timeoutOffline);
+			clearTimeout(this.timeoutSendPing);
+			clearTimeout(this.timeoutReconnect);
+			return;
+		}
 		this.reconnect();
 	}
 
