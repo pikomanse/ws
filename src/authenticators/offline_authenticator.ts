@@ -1,6 +1,7 @@
 import {Authenticator} from "../types";
 import {importSigningKey, signToken, startSecretImport, tokenLifetime} from "../keys";
-import {INSPECT, refuseInBrowser} from "../redact";
+import {INSPECT, inBrowser, refuseInBrowser} from "../redact";
+import {onLocalPage} from "../names";
 
 /** The signing key of each authenticator, out of reach of JSON.stringify and util.inspect. */
 const signingKeys = new WeakMap<OfflineAuthenticator, Promise<CryptoKey>>();
@@ -12,7 +13,9 @@ const signingKeys = new WeakMap<OfflineAuthenticator, Promise<CryptoKey>>();
  *   id from `PIKOMAN_SIGNING_KEY_ID`), or as a bot with an API key that has `subscribe`
  *   (`OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY)`).
  * - In a browser, for local experiments only: the private key is in the page, so anyone can read
- *   it. In production, browsers get tokens from the app's backend (HttpAuthenticator).
+ *   it. In production, browsers get tokens from the app's backend (HttpAuthenticator). A page not
+ *   served from localhost is refused unless it passes `{allowInBrowser: true}`, for a page that
+ *   only tries things out with a key its visitor types in.
  *
  * A token is a JWT signed with EdDSA (Ed25519): `header.payload.signature`, each part base64url,
  * the same as any JWT library makes with `alg: "EdDSA"`. With a key id, the header carries `kid`.
@@ -40,9 +43,13 @@ export default class OfflineAuthenticator implements Authenticator {
     /**
      * `privateKey` is a PKCS#8 key (PEM, or base64 on one line) or an imported Ed25519 CryptoKey.
      * `keyId`, when given, goes in the token's header as `kid`: the id of one of the app's
-     * signing keys, or of an API key.
+     * signing keys, or of an API key. Throws in a page not served from localhost, unless
+     * `options.allowInBrowser`.
      */
-    constructor(data: any, privateKey: string | CryptoKey | Promise<CryptoKey>, permissions: number, keyId?: string) {
+    constructor(data: any, privateKey: string | CryptoKey | Promise<CryptoKey>, permissions: number, keyId?: string, options: {allowInBrowser?: boolean} = {}) {
+        if (inBrowser() && !onLocalPage() && !options.allowInBrowser) {
+            throw new Error("Pikoman: OfflineAuthenticator puts the private key in the page, where anyone can read it. In production your backend signs join tokens (HttpAuthenticator). For a page that only tries things out with a key its visitor types in, pass {allowInBrowser: true}.");
+        }
         this.data = data;
         const signingKey = typeof privateKey === 'string' ? importSigningKey(privateKey) : Promise.resolve(privateKey);
         // Keep an unread key from being an unhandled rejection; authenticate() still throws.

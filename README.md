@@ -32,13 +32,29 @@ pikoman.listen("orders").on("order-shipped", (data) => console.log(data.id));
 
 // Presence: who is here, and messages between the members.
 const room = pikoman.listenPresence("presence-room");
-room.on("typing", (from, data) => console.log(from, data)); // events from other members: sender first
-room.send("typing", { on: true });                            // a third argument true also echoes it to you
+room.onClient("typing", (from, data) => console.log(from, data)); // events from other members: sender first
+room.send("typing", { on: true });               // sent as client-typing; a third argument true also echoes it to you
 room.members((members) => console.log([...members.values()]));  // Map of connection id to member data
 
 // Private: only for those your backend signs a token for.
 pikoman.listenPrivate("private-user-123").on("notification", (data) => console.log(data));
+
+// A single-page app that no longer needs the connection: close it for good.
+pikoman.close();
 ```
+
+Events between members (client events) are named `client-…`, and events your backend publishes
+never are, so a member can never send something that looks published by your backend. `send("typing")`
+sends `client-typing` (a name that already starts with `client-` is kept as it is), and
+`onClient("typing", fn)` is the same as `on("client-typing", fn)`. `clientMessage(fn)` gets every
+client event as `fn(from, "client-typing", data)`.
+
+`close()` closes the socket, stops every timer, removes the page listeners and never reconnects; a
+new `Pikoman` connects again. When the connection is lost, the client connects again after a random
+wait below 1 s, then below 2, 4, 8 s and so on up to 30 s while attempts fail, and starts over from
+1 s once a connection has lasted 30 s. A callback of yours that throws (`offline`, `online`, `on`,
+`refused`, …) stops neither the library nor the other callbacks: the library reconnects or joins
+first, and the error is thrown again on its own.
 
 ## Publish from a backend
 
@@ -58,24 +74,37 @@ await rest.publish("orders", "order-shipped", { id: 1042 });
 ```
 
 Each request carries `Authorization: Bearer <jwt>`: an EdDSA JWT with `kid` (the key id) in the
-header and `iss` (the app id), `iat` and `exp` (at most 10 minutes) as claims. `Rest` makes one
-that lives five minutes and reuses it for four; a token the server refuses with 401 is dropped and
-the request tried once more with a fresh one. Data with no JSON form (a function, a symbol) is
+header, made for that one request and never reused. Its claims are `iss` (the app id), `iat`,
+`exp` (`iat` + 60), `htm` (the method, `POST`), `htu` (the path with its query string as fetch
+sends it: no scheme or host, and an empty query, a lone `?`, left out) and `bh` (SHA-256 of the
+exact body, base64url without padding; for no body, of the empty string). So a token seen in a log
+works for no other request, and only for a minute. `Rest` signs a new one for every request. Event
+names that start with `client-` are members' client events, and `publish` refuses them, as it
+refuses empty channel and event names and `.` and `..`, which a URL reads as steps in the path. An
+event's data may be at most 12 KiB. Data with no JSON form (a function, a symbol) is
 refused; `undefined` is sent as `null`. `Rest`, `OfflineAuthenticator.fromSecret` and
 `MasterKeyAuthenticator` refuse to run in a browser page: what holds a secret key belongs on a
-server. For other requests (stats, clients, disconnect), make the header yourself:
+server. `Rest` takes only an `https://` address (`http://` only to localhost), so a typo cannot
+send its tokens in the clear; outside a browser the same goes for `ws_address`, which must be
+`wss://` (`ws://` only to localhost). For other requests (stats, clients, disconnect), make the
+header yourself:
 
 ```js
 import { authorizationHeader } from "@pikoman/ws";
 
-const res = await fetch("https://next-api.pikoman.se/orders/stats", {
-  headers: { Authorization: await authorizationHeader(process.env.PIKOMAN_API_KEY, "app-yourapp") },
+const url = "https://next-api.pikoman.se/orders/stats";
+const res = await fetch(url, {
+  headers: {
+    Authorization: await authorizationHeader(process.env.PIKOMAN_API_KEY, "app-yourapp", { method: "GET", url }),
+  },
 });
 ```
 
-`requestToken(apiKey, appId, lifetimeSeconds = 300)` gives the JWT alone. Both take the `sk_` secret
-or `{ keyId, key }` with an imported key; without `keyId` they throw, since the server finds the key
-by the `kid`. Lifetimes of request and join tokens are whole seconds (rounded down), at most 600.
+`requestToken(apiKey, appId, { method, url, body })` gives the JWT alone. `url` is the URL or the
+path, with the query string, as it is sent (signed as Node's fetch sends it, `pathname + search`,
+so a lone `?` is left out); `body` is the text or bytes exactly as sent (leave it out for none). Make a new token for every request. Both take the `sk_` secret or
+`{ keyId, key }` with an imported key; without `keyId` they throw, since the server finds the key
+by the `kid`. Lifetimes of join tokens are whole seconds (rounded down), at most 600.
 
 ## Join tokens
 
@@ -98,6 +127,15 @@ const bot = OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY, { name:
 pikoman.listenPresence("presence-room", bot);
 ```
 
+With a signing key, `OfflineAuthenticator` puts the private key wherever it runs. In a browser
+page it is refused unless the page is served from localhost, or passes `{ allowInBrowser: true }`
+as the fifth argument: only for a page that tries things out with a key its visitor types in, never
+for a key you ship.
+
+`HttpAuthenticator` asks `{auth_url}/{connection id}-{channel}`, and refuses a channel name the
+server would not take (1-164 characters of `A-Z a-z 0-9 _ - = @ , . ;`), so a name taken from a URL
+cannot point the request at another path on your backend. App ids are checked the same way.
+
 `parseSecret(secret)` reads an `sk_` secret into `{ keyId, seed }` and throws on anything malformed.
 
 ### Bots in presence channels
@@ -114,7 +152,7 @@ room.botKey(id);   // the id of the API key a bot joined with ("k_…"), undefin
 room.getBots();    // Map of connection id to key id
 
 // Who sent a client event: the relay sets `from`, so this tells a bot from a person.
-room.on("status", (from, data) => {
+room.onClient("status", (from, data) => {
   if (room.isBot(from)) console.log(`bot ${room.botKey(from)}:`, data);
 });
 ```
@@ -141,19 +179,21 @@ const pikoman = new Pikoman("app-123", {
 });
 
 pikoman.revoked(() => showModal("Your access was removed."));  // 4403: stays offline
-pikoman.offline(() => showBanner("Reconnecting …"));          // any close; reconnects after 5 s
+pikoman.offline(() => showBanner("Reconnecting …"));          // once per lost connection; reconnects with backoff
 
 const room = pikoman.listenPresence("presence-room");
 room.refused((code) => {
 	if (code === "key_revoked") showToast("Joining the room again …");
 	else if (code === "rejoin_failed") showModal("Could not join the room again. Reload the page.");
 	else if (code === "channel_full") showModal("The room is full.");
-	else console.warn("Pikoman:", code);  // not_allowed, join_refused, rate_limited, member_data_too_large, …
+	else console.warn("Pikoman:", code);  // not_allowed, join_refused, rate_limited, data_too_large, …
 });
 ```
 
 A presence channel is full at 500 members, or when its member list would pass 64 KiB; a member's
-data may be at most 1 KiB. A connection may send at most 10 client events a second.
+data may be at most 1 KiB, and an event's data at most 12 KiB (a client event over it is refused
+with `data_too_large`). A connection may send at most 10 client events a second. A client event
+without the `client-` prefix is refused with `invalid_event_name`; this library always adds it.
 
 ## End-to-end encrypted channels
 
@@ -164,8 +204,9 @@ and gives each client the key for the channels it is let into.
 ```js
 // Browser: join as with private channels. Events arrive decrypted; send encrypts.
 const secret = pikoman.listenPrivate("private-encrypted-team-7");
-secret.on("message", (data) => console.log(data.text));
-await secret.send("message", { text: "hej" });  // rejects if offline: nothing was sent
+secret.on("notice", (data) => console.log(data.text));                // published by your backend
+secret.onClient("message", (from, data) => console.log(from, data.text)); // from other members
+await secret.send("message", { text: "hej" });  // client-message; rejects if offline: nothing was sent
 secret.refused((code) => console.warn(code));  // "decrypt_failed": a message was dropped
 ```
 

@@ -38,7 +38,10 @@ export default class MasterKeyAuthenticator implements Authenticator {
         if (!isEncryptedChannel(channelName)) {
             return token;
         }
-        return {token, channel_key: await channelKey(await (masterKeys.get(this) as Promise<CryptoKey>), channelName)};
+        if (!options.app) {
+            throw new Error('Pikoman: MasterKeyAuthenticator needs the app id, which Pikoman passes in the options');
+        }
+        return {token, channel_key: await channelKey(await (masterKeys.get(this) as Promise<CryptoKey>), options.app, channelName)};
     }
 
     toJSON() {

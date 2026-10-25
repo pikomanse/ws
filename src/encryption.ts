@@ -3,12 +3,16 @@
  *
  * - Master key: 32 random bytes kept by the app's backend (`PIKOMAN_ENCRYPTION_KEY`, base64).
  *   Never sent to Pikoman, never to a browser.
- * - Channel key: HMAC-SHA256(master key, channel name), 32 bytes. What a client gets.
+ * - Channel key: HMAC-SHA256(master key, `<app id>\n<channel name>`), 32 bytes. What a client
+ *   gets. With the app id, one master key used for two apps (staging and production) still gives
+ *   each its own keys, so a ciphertext from one is not readable as the other's.
  * - An event's data on the wire: `{"nonce": "<base64 12 bytes>", "ciphertext": "<base64>"}`,
  *   AES-256-GCM over the UTF-8 JSON of the real data, with the tag appended, and the UTF-8 bytes
  *   of `<direction>\n<channel>\n<event>` as additional authenticated data. The direction is
  *   `server` for what the app's backend publishes over HTTP and `client` for client events between
- *   members, so neither can be passed off as the other. An event without a name uses "".
+ *   members, so the relay alone cannot pass one off as the other. It does not prove who wrote an
+ *   event: every member holds the channel key and can encrypt either way. If clients must trust
+ *   that an event came from the backend, the backend signs it. An event without a name uses "".
  */
 import {fromBase64, fromUtf8, keyBytes, randomBytes, subtle, toBase64, utf8} from './encoding';
 
@@ -66,12 +70,16 @@ export async function importMasterKey(masterKey: MasterKey): Promise<CryptoKey> 
 }
 
 /**
- * The channel key for one channel, as base64 (what a token endpoint answers in `channel_key`).
- * `masterKey` is the app's 32-byte master key, base64 or bytes, or the CryptoKey from `importMasterKey`.
+ * The channel key for one channel of one app, as base64 (what a token endpoint answers in
+ * `channel_key`). `masterKey` is the app's 32-byte master key, base64 or bytes, or the CryptoKey
+ * from `importMasterKey`.
  */
-export async function channelKey(masterKey: MasterKey, channel: string): Promise<string> {
+export async function channelKey(masterKey: MasterKey, appId: string, channel: string): Promise<string> {
+    if (!appId) {
+        throw new Error('Pikoman: a channel key needs the app id');
+    }
     const hmac = await importMasterKey(masterKey);
-    return toBase64(new Uint8Array(await subtle().sign('HMAC', hmac, utf8(channel))));
+    return toBase64(new Uint8Array(await subtle().sign('HMAC', hmac, utf8(`${appId}\n${channel}`))));
 }
 
 /** Imports a channel key for AES-256-GCM. */

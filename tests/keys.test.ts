@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import {createPrivateKey, createPublicKey, webcrypto} from 'crypto';
+import {createHash, createPrivateKey, createPublicKey, webcrypto} from 'crypto';
 import {
     MasterKeyAuthenticator,
     OfflineAuthenticator,
@@ -9,6 +9,8 @@ import {
     parseSecret,
     requestToken,
     authorizationHeader,
+    REQUEST_TOKEN_LIFETIME,
+    SignedRequest,
     Rest,
     channelKey,
     decryptEvent,
@@ -81,57 +83,88 @@ describe('API key secrets', () => {
     });
 });
 
+/** base64url SHA-256, made with Node's own crypto rather than the library's. */
+const sha256 = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('base64url');
+const POST = {method: 'POST', url: 'https://api.example/orders/created', body: '{"id":1042}'};
+
 describe('Request tokens', () => {
     it('Should have the header and claims of KEYS.md and verify with the public key', async () => {
         const before = Math.floor(Date.now() / 1000);
-        const token = await requestToken(SECRET, 'app-test');
+        const token = await requestToken(SECRET, 'app-test', POST);
         const [header, payload] = token.split('.');
         expect(decode(header)).toEqual({alg: 'EdDSA', typ: 'JWT', kid: KEY_ID});
         const claims = decode(payload);
-        expect(Object.keys(claims).sort()).toEqual(['exp', 'iat', 'iss']);
+        expect(Object.keys(claims).sort()).toEqual(['bh', 'exp', 'htm', 'htu', 'iat', 'iss']);
         expect(claims.iss).toBe('app-test');
         expect(claims.iat).toBeGreaterThanOrEqual(before);
-        expect(claims.exp - claims.iat).toBe(300);
+        expect(claims.exp - claims.iat).toBe(60);
+        expect(REQUEST_TOKEN_LIFETIME).toBe(60);
+        expect(claims.htm).toBe('POST');
+        expect(claims.htu).toBe('/orders/created');
+        expect(claims.bh).toBe(sha256('{"id":1042}'));
         expect(await verify(token)).toBe(true);
     });
 
+    it('Should bind the method, the path with its query, and the exact body', async () => {
+        const claims = async (request: SignedRequest) => decode((await requestToken(SECRET, 'app-test', request)).split('.')[1]);
+
+        // Lower case is sent as upper case; a path alone works as well as a URL.
+        expect((await claims({method: 'get', url: '/orders/stats'})).htm).toBe('GET');
+        expect((await claims({method: 'GET', url: '/orders/stats'})).htu).toBe('/orders/stats');
+        // The query string as sent; never the scheme, the host or a fragment.
+        expect((await claims({method: 'GET', url: 'https://api.example:8443/orders/clients?limit=5&x=%20#top'})).htu).toBe('/orders/clients?limit=5&x=%20');
+        // Node's fetch sends pathname + search, which leaves out an empty query: so is it signed.
+        expect((await claims({method: 'GET', url: 'https://api.example/orders/stats?'})).htu).toBe('/orders/stats');
+        expect((await claims({method: 'GET', url: '/orders/stats?#top'})).htu).toBe('/orders/stats');
+        // A query is written as the URL parser writes it, as fetch sends it.
+        expect((await claims({method: 'GET', url: "/orders/stats?q='a b'"})).htu).toBe('/orders/stats?q=%27a%20b%27');
+        // The path as fetch writes it, encoded.
+        expect((await claims({method: 'POST', url: 'https://api.example/orders/order shipped'})).htu).toBe('/orders/order%20shipped');
+
+        // No body, an empty one and null all hash the empty string.
+        const empty = sha256('');
+        expect(empty).toBe('47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU');
+        for (const body of [undefined, null, '', new Uint8Array(0)]) {
+            expect((await claims({method: 'DELETE', url: '/disconnect-all', body})).bh).toBe(empty);
+        }
+        // Text is hashed as UTF-8, bytes as they are, and one byte more is another hash.
+        expect((await claims({...POST, body: '{"text":"hej då"}'})).bh).toBe(sha256(Buffer.from('{"text":"hej då"}', 'utf8')));
+        expect((await claims({...POST, body: Buffer.from([1, 2, 3])})).bh).toBe(sha256(Buffer.from([1, 2, 3])));
+        expect((await claims({...POST, body: '{"id":1042} '})).bh).not.toBe(sha256('{"id":1042}'));
+    });
+
+    it('Should refuse to sign without the request it is for', async () => {
+        for (const request of [undefined, 300, 'POST /orders', {url: '/orders'}, {method: 'POST'}, {method: 'PO ST', url: '/a'}, {method: 'POST', url: ''}]) {
+            await expect(requestToken(SECRET, 'app-test', request as any)).rejects.toThrow(/request|method|URL/);
+            await expect(authorizationHeader(SECRET, 'app-test', request as any)).rejects.toThrow(/request|method|URL/);
+        }
+        await expect(requestToken(SECRET, 'app-test', {...POST, body: {id: 1} as any})).rejects.toThrow(/text or bytes/);
+        await expect(requestToken(SECRET, '', POST)).rejects.toThrow(/app id/);
+    });
+
     it('Should not verify after a change', async () => {
-        const token = await requestToken(SECRET, 'app-test');
-        const [header, , signature] = token.split('.');
-        const forged = Buffer.from(JSON.stringify({iss: 'app-other', iat: 1, exp: 2})).toString('base64url');
-        expect(await verify(`${header}.${forged}.${signature}`)).toBe(false);
-    });
-
-    it('Should live at most ten minutes', async () => {
-        const token = await requestToken(SECRET, 'app-test', 600);
-        const claims = decode(token.split('.')[1]);
-        expect(claims.exp - claims.iat).toBe(600);
-        await expect(requestToken(SECRET, 'app-test', 601)).rejects.toThrow();
-        await expect(requestToken(SECRET, 'app-test', 0)).rejects.toThrow();
-        await expect(requestToken(SECRET, '')).rejects.toThrow();
-    });
-
-    it('Should live whole seconds only', async () => {
-        const claims = decode((await requestToken(SECRET, 'app-test', 299.9)).split('.')[1]);
-        expect(claims.exp - claims.iat).toBe(299);
-        expect(Number.isInteger(claims.exp)).toBe(true);
-        await expect(requestToken(SECRET, 'app-test', 600.5)).resolves.toBeTruthy();
-        await expect(requestToken(SECRET, 'app-test', 0.9)).rejects.toThrow();
-        await expect(requestToken(SECRET, 'app-test', NaN)).rejects.toThrow();
+        const token = await requestToken(SECRET, 'app-test', POST);
+        const [header, payload, signature] = token.split('.');
+        const claims = decode(payload);
+        for (const changed of [{iss: 'app-other'}, {htm: 'DELETE'}, {htu: '/orders/deleted'}, {bh: sha256('{"id":1}')}, {exp: claims.exp + 600}]) {
+            const forged = Buffer.from(JSON.stringify({...claims, ...changed})).toString('base64url');
+            expect(await verify(`${header}.${forged}.${signature}`)).toBe(false);
+        }
     });
 
     it('Should refuse a key without its id, rather than sign a token without kid', async () => {
         const {key} = await importSecret(SECRET);
-        await expect(requestToken({key}, 'app-test')).rejects.toThrow(/id/);
-        await expect(requestToken({key, keyId: ''}, 'app-test')).rejects.toThrow(/id/);
-        const token = await requestToken({key, keyId: KEY_ID}, 'app-test');
+        await expect(requestToken({key}, 'app-test', POST)).rejects.toThrow(/id/);
+        await expect(requestToken({key, keyId: ''}, 'app-test', POST)).rejects.toThrow(/id/);
+        const token = await requestToken({key, keyId: KEY_ID}, 'app-test', POST);
         expect(decode(token.split('.')[0]).kid).toBe(KEY_ID);
     });
 
     it('Should make the Authorization header', async () => {
-        const header = await authorizationHeader(SECRET, 'app-test');
+        const header = await authorizationHeader(SECRET, 'app-test', {method: 'GET', url: 'https://api.example/orders/stats'});
         expect(header).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
         expect(await verify(header.slice('Bearer '.length))).toBe(true);
+        expect(decode(header.split('.')[1])).toMatchObject({htm: 'GET', htu: '/orders/stats', bh: sha256('')});
     });
 });
 
@@ -176,7 +209,7 @@ describe('Rest', () => {
         (globalThis as any).fetch = realFetch;
     });
 
-    it('Should publish with a bearer token, and reuse it', async () => {
+    it('Should publish with a bearer token made for that one request', async () => {
         const calls: any[] = [];
         (globalThis as any).fetch = async (url: string, init: any) => {
             calls.push({url, init});
@@ -189,13 +222,17 @@ describe('Rest', () => {
         expect(calls[0].init.method).toBe('POST');
         expect(calls[0].init.body).toBe('{"id":1042}');
         const authorization = calls[0].init.headers.Authorization;
-        expect(await verify(authorization.slice('Bearer '.length))).toBe(true);
-        expect(calls[1].init.headers.Authorization).toBe(authorization);
+        const token = authorization.slice('Bearer '.length);
+        expect(await verify(token)).toBe(true);
+        const claims = decode(token.split('.')[1]);
+        expect(claims).toMatchObject({iss: 'app-test', htm: 'POST', htu: '/orders/order%20shipped', bh: sha256('{"id":1042}')});
+        expect(claims.exp - claims.iat).toBe(60);
+        // The next request has a token of its own, for its own path and body.
+        expect(decode(calls[1].init.headers.Authorization.split('.')[1])).toMatchObject({htu: '/orders/again', bh: sha256('null')});
     });
 
-    it('Should drop a token refused with 401 and try once more with a fresh one', async () => {
-        // Every request moves the clock one second: well inside the four minutes a token is
-        // reused, so a token that was kept would be sent again, and a fresh one has a later iat.
+    it('Should never reuse a token, and not try again after a 401', async () => {
+        // The clock moves a second per request, as the same request a second later must get a new token.
         const clock = jest.spyOn(Date, 'now');
         let now = 1_800_000_000_000;
         clock.mockImplementation(() => now);
@@ -209,32 +246,57 @@ describe('Rest', () => {
         };
         try {
             const rest = new Rest({app: 'app-test', apiKey: SECRET});
-            statuses = [401, 202];
+            statuses = [202, 202];
             await rest.publish('orders', 'x', 1);
-            expect(authorizations).toHaveLength(2);
+            await rest.publish('orders', 'x', 1);
             expect(authorizations[1]).not.toBe(authorizations[0]);
+            expect(decode(authorizations[1].split('.')[1]).iat).toBe(decode(authorizations[0].split('.')[1]).iat + 1);
 
-            // A token that worked is reused.
-            statuses = [202];
-            await rest.publish('orders', 'x', 1);
-            expect(authorizations[2]).toBe(authorizations[1]);
-
-            // Only one retry: a second 401 is the answer, and that token is not kept either.
-            statuses = [401, 401];
+            // A fresh token was refused: trying again would only be refused again.
+            statuses = [401];
             await expect(rest.publish('orders', 'x', 1)).rejects.toThrow('401');
-            expect(authorizations).toHaveLength(5);
-            expect(authorizations[3]).toBe(authorizations[2]);
-            expect(authorizations[4]).not.toBe(authorizations[3]);
-            statuses = [202];
-            await rest.publish('orders', 'x', 1);
-            expect(authorizations[5]).not.toBe(authorizations[4]);
-
-            // Other refusals are not retried.
             statuses = [403];
             await expect(rest.publish('orders', 'x', 1)).rejects.toThrow('403');
-            expect(authorizations).toHaveLength(7);
+            expect(authorizations).toHaveLength(4);
+            expect(new Set(authorizations).size).toBe(4);
         } finally {
             clock.mockRestore();
+        }
+    });
+
+    it('Should refuse to publish an event named client-…, which only members send', async () => {
+        const calls: any[] = [];
+        (globalThis as any).fetch = async (...args: any[]) => {
+            calls.push(args);
+            return {ok: true, status: 202, json: async () => ({})};
+        };
+        const rest = new Rest({app: 'app-test', apiKey: SECRET});
+        await expect(rest.publish('orders', 'client-shipped', 1)).rejects.toThrow(/client-/);
+        expect(calls).toEqual([]);
+        await rest.publish('orders', 'shipped-to-client', 1);
+        expect(calls).toHaveLength(1);
+    });
+
+    it('Should refuse names that are empty, "." or "..", and send every other name as one path segment', async () => {
+        const urls: string[] = [];
+        (globalThis as any).fetch = async (url: string) => {
+            urls.push(url);
+            return {ok: true, status: 202, json: async () => ({})};
+        };
+        const rest = new Rest({app: 'app-test', apiKey: SECRET, address: 'https://api.example'});
+        // The URL parser reads "." and ".." as steps: POST /../mass_events would be POST /mass_events.
+        const refused = [['..', 'mass_events'], ['.', 'x'], ['', 'x'], ['orders', '..'], ['orders', '.'], ['orders', ''], [undefined, 'x'], ['orders', null]];
+        for (const [channel, event] of refused) {
+            await expect(rest.publish(channel as any, event as any, 1)).rejects.toThrow(/name \(it cannot be empty/);
+        }
+        expect(urls).toEqual([]);
+
+        // Anything else is percent-encoded: a slash, a percent sign or three dots stay in their segment.
+        await rest.publish('...', 'a/b', 1);
+        await rest.publish('orders', '%2e%2e', 1);
+        expect(urls).toEqual(['https://api.example/.../a%2Fb', 'https://api.example/orders/%252e%252e']);
+        for (const url of urls) {
+            expect(new URL(url).pathname.split('/')).toHaveLength(3);
         }
     });
 
@@ -260,11 +322,16 @@ describe('Rest', () => {
             expect(() => new Rest({app: 'app-test', apiKey: SECRET})).toThrow(/never in a browser/);
             expect(() => OfflineAuthenticator.fromSecret(SECRET)).toThrow(/never in a browser/);
             expect(() => new MasterKeyAuthenticator({authenticate: async () => 't'}, Buffer.alloc(32).toString('base64'))).toThrow(/never in a browser/);
-            // A signing key for local experiments still works there.
+            // A signing key puts the key in the page: refused, unless the page says it means it
+            // (a playground where the visitor types in a key) or is served from localhost.
+            expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0)).toThrow(/allowInBrowser/);
+            expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0, undefined, {allowInBrowser: true})).not.toThrow();
+            g.location = {hostname: 'localhost'};
             expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0)).not.toThrow();
         } finally {
             delete g.window;
             delete g.document;
+            delete g.location;
         }
         expect(() => new Rest({app: 'app-test', apiKey: SECRET})).not.toThrow();
     });
@@ -295,7 +362,7 @@ describe('Rest', () => {
         await new Rest({app: 'app-test', apiKey: SECRET, encryptionKey: master}).publish('private-encrypted-room', 'msg', {text: 'hi'});
         expect(Object.keys(bodies[0]).sort()).toEqual(['ciphertext', 'nonce']);
         // Published over HTTP: authenticated as the server, not as a member.
-        const key = await channelKey(master, 'private-encrypted-room');
+        const key = await channelKey(master, 'app-test', 'private-encrypted-room');
         expect(await decryptEvent('private-encrypted-room', 'msg', bodies[0], key, 'server')).toEqual({text: 'hi'});
         await expect(decryptEvent('private-encrypted-room', 'msg', bodies[0], key, 'client')).rejects.toThrow();
         await expect(new Rest({app: 'app-test', apiKey: SECRET}).publish('private-encrypted-room', 'msg', 1)).rejects.toThrow(/master key/);

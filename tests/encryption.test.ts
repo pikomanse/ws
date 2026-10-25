@@ -8,21 +8,21 @@ import {installWebGlobals} from './web_globals';
 // Test keys only. The master key is the bytes 0, 1, …, 31.
 const MASTER = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 // HMAC-SHA256(MASTER, "private-encrypted-test"), computed once with Node's crypto.
-const TEST_CHANNEL_KEY = 'BXZ3eZVE7qg3gVuvKUOimdghY3hQ1Gm0h9uULbkIQb0=';
+const TEST_CHANNEL_KEY = 'tYiq/FY0unmbT9GVQeR6NNCdJhPvlbl6+70+E0B0cS0=';
 const CHANNEL = 'private-encrypted-test';
 
 beforeAll(installWebGlobals);
 
 describe('Channel keys', () => {
-    it('Should be HMAC-SHA256 of the channel name', async () => {
-        expect(await channelKey(MASTER, CHANNEL)).toBe(TEST_CHANNEL_KEY);
-        expect(await channelKey(new Uint8Array(Buffer.from(MASTER, 'base64')), CHANNEL)).toBe(TEST_CHANNEL_KEY);
-        expect(await channelKey(MASTER, 'private-encrypted-other')).not.toBe(TEST_CHANNEL_KEY);
+    it('Should be HMAC-SHA256 of the app id and the channel name', async () => {
+        expect(await channelKey(MASTER, 'app-test', CHANNEL)).toBe(TEST_CHANNEL_KEY);
+        expect(await channelKey(new Uint8Array(Buffer.from(MASTER, 'base64')), 'app-test', CHANNEL)).toBe(TEST_CHANNEL_KEY);
+        expect(await channelKey(MASTER, 'app-test', 'private-encrypted-other')).not.toBe(TEST_CHANNEL_KEY);
     });
 
     it('Should refuse master and channel keys that are not 32 bytes', async () => {
-        await expect(channelKey(Buffer.alloc(16).toString('base64'), CHANNEL)).rejects.toThrow();
-        await expect(channelKey('not base64!', CHANNEL)).rejects.toThrow();
+        await expect(channelKey(Buffer.alloc(16).toString('base64'), 'app-test', CHANNEL)).rejects.toThrow();
+        await expect(channelKey('not base64!', 'app-test', CHANNEL)).rejects.toThrow();
         await expect(importChannelKey(Buffer.alloc(31).toString('base64'))).rejects.toThrow();
     });
 });
@@ -95,7 +95,7 @@ describe('Encrypted events', () => {
 
     it('Should fail with the wrong key', async () => {
         const encrypted = await encryptEvent(CHANNEL, 'message', data, TEST_CHANNEL_KEY);
-        const otherKey = await channelKey(MASTER, 'private-encrypted-other');
+        const otherKey = await channelKey(MASTER, 'app-test', 'private-encrypted-other');
         await expect(decryptEvent(CHANNEL, 'message', encrypted, otherKey)).rejects.toThrow();
     });
 
@@ -116,6 +116,8 @@ describe('Encrypted events', () => {
     it('Should read the fixed vectors', async () => {
         // Made once with Node's crypto: the channel key above, the nonce 0, 1, …, 11, and the AAD
         // `<direction>\n<channel>\n<event>`. Other libraries (the Rust crate) can check the same bytes.
+        // The cipher is what these test, not the derivation: the key they were made with.
+        const VECTOR_KEY = 'BXZ3eZVE7qg3gVuvKUOimdghY3hQ1Gm0h9uULbkIQb0=';
         const nonce = 'AAECAwQFBgcICQoL';
         const vectors: [Direction, string, string, any][] = [
             ['server', 'message', '+OUwyZTgsN9LZaMOU0G+DcstVR88BuFRU9459MuI', {text: 'hej'}],
@@ -123,9 +125,9 @@ describe('Encrypted events', () => {
             ['server', '', '7bIowIH5W+5XA7DldbXSv8oT/a0=', null],
         ];
         for (const [direction, event, ciphertext, plain] of vectors) {
-            expect(await decryptEvent(CHANNEL, event, {nonce, ciphertext}, TEST_CHANNEL_KEY, direction)).toEqual(plain);
+            expect(await decryptEvent(CHANNEL, event, {nonce, ciphertext}, VECTOR_KEY, direction)).toEqual(plain);
             const other: Direction = direction === 'server' ? 'client' : 'server';
-            await expect(decryptEvent(CHANNEL, event, {nonce, ciphertext}, TEST_CHANNEL_KEY, other)).rejects.toThrow();
+            await expect(decryptEvent(CHANNEL, event, {nonce, ciphertext}, VECTOR_KEY, other)).rejects.toThrow();
         }
     });
 

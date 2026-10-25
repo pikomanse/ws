@@ -1,10 +1,13 @@
 /**
  * The HTTP API, for Node backends, scripts and tools. Never in a browser: the API key would be in
- * the page. Requests carry `Authorization: Bearer <jwt>` signed with an API key (KEYS.md).
+ * the page. Each request carries `Authorization: Bearer <jwt>`, a token signed with an API key for
+ * that request alone (KEYS.md).
  */
-import {KeyWithId, requestToken, startSecretImport} from './keys';
+import {KeyWithId, requestToken, SignedRequest, startSecretImport} from './keys';
 import {encryptEvent, eventJson, isEncryptedChannel, channelKey, startMasterKeyImport} from './encryption';
+import {CLIENT_EVENT_PREFIX} from './client_events';
 import {INSPECT, refuseInBrowser} from './redact';
+import {checkedAddress} from './names';
 
 export const DEFAULT_API_ADDRESS = 'https://next-api.pikoman.se';
 
@@ -19,24 +22,33 @@ export interface RestOptions {
     address?: string;
 }
 
-/** A request token is made to live five minutes and reused for four. */
-const TOKEN_LIFETIME = 300;
-const TOKEN_REUSE = 240;
-
 function env(name: string): string | undefined {
     const process = (globalThis as any).process;
     return process && process.env ? process.env[name] : undefined;
 }
 
 /**
- * What a Rest holds that must not be seen: the API key, the master key (both non-extractable
- * CryptoKeys, no raw bytes kept) and the cached request token. In a WeakMap, so neither
- * JSON.stringify nor util.inspect of a Rest can reach them.
+ * A channel or event name as one segment of the request's path. encodeURIComponent encodes "/"
+ * and "%", so no name can reach another segment, except "." and "..", which the URL parser
+ * (fetch's too) reads as steps in the path: `publish("..", "mass_events")` would go out as
+ * `POST /mass_events`. Those are refused, and so is an empty name.
+ */
+function pathSegment(kind: 'channel' | 'event', name: string): string {
+    if (typeof name !== 'string' || name === '' || name === '.' || name === '..') {
+        const shown = typeof name === 'string' ? JSON.stringify(name) : String(name);
+        throw new Error(`Pikoman: ${shown} is not a${kind === 'event' ? 'n' : ''} ${kind} name (it cannot be empty, "." or "..")`);
+    }
+    return encodeURIComponent(name);
+}
+
+/**
+ * What a Rest holds that must not be seen: the API key and the master key (both non-extractable
+ * CryptoKeys, no raw bytes kept). In a WeakMap, so neither JSON.stringify nor util.inspect of a
+ * Rest can reach them.
  */
 interface Secrets {
     key: Promise<KeyWithId>;
     masterKey?: Promise<CryptoKey>;
-    token?: { value: string, until: number };
 }
 
 const secrets = new WeakMap<Rest, Secrets>();
@@ -71,53 +83,44 @@ export class Rest {
             secret.masterKey.catch(() => undefined);
         }
         secrets.set(this, secret);
-        this.address = (options.address ?? DEFAULT_API_ADDRESS).replace(/\/+$/, '');
+        this.address = checkedAddress(options.address ?? DEFAULT_API_ADDRESS, 'https', 'http');
     }
 
     private get secret(): Secrets {
         return secrets.get(this) as Secrets;
     }
 
-    /** `Bearer <jwt>`, a fresh token every four minutes. */
-    async authorization(): Promise<string> {
-        const secret = this.secret;
-        const now = Date.now() / 1000;
-        if (!secret.token || secret.token.until <= now) {
-            secret.token = {value: await requestToken(await secret.key, this.app, TOKEN_LIFETIME), until: now + TOKEN_REUSE};
-        }
-        return `Bearer ${secret.token.value}`;
+    /** `Bearer <jwt>` for this one request: a new token every time, see `requestToken`. */
+    async authorization(request: SignedRequest): Promise<string> {
+        return `Bearer ${await requestToken(await this.secret.key, this.app, request)}`;
     }
 
     /**
      * Publishes an event: `POST /{channel}/{event}` with the data as JSON. In a
-     * `private-encrypted-` channel the data is encrypted with the master key first.
+     * `private-encrypted-` channel the data is encrypted with the master key first. Names that
+     * start with `client-` are members' client events, which a backend never publishes, and
+     * empty names, "." and ".." are refused (see `pathSegment`).
      */
     async publish(channel: string, event: string, data: any): Promise<void> {
+        const path = `/${pathSegment('channel', channel)}/${pathSegment('event', event)}`;
+        if (event.startsWith(CLIENT_EVENT_PREFIX)) {
+            throw new Error(`Pikoman: ${event}: names that start with ${CLIENT_EVENT_PREFIX} are members' client events, never published by a backend`);
+        }
         let body = data === undefined ? null : data;
         if (isEncryptedChannel(channel)) {
             const masterKey = this.secret.masterKey;
             if (!masterKey) {
                 throw new Error(`${channel} is encrypted: need the master key (option encryptionKey, or PIKOMAN_ENCRYPTION_KEY)`);
             }
-            body = await encryptEvent(channel, event, body, await channelKey(await masterKey, channel), 'server');
+            body = await encryptEvent(channel, event, body, await channelKey(await masterKey, this.app, channel), 'server');
         }
-        const url = `${this.address}/${encodeURIComponent(channel)}/${encodeURIComponent(event)}`;
+        const url = `${this.address}${path}`;
         const json = eventJson(body);
-        const post = async () => fetch(url, {
+        const response = await fetch(url, {
             method: 'POST',
-            headers: {'Authorization': await this.authorization(), 'Content-Type': 'application/json'},
+            headers: {'Authorization': await this.authorization({method: 'POST', url, body: json}), 'Content-Type': 'application/json'},
             body: json,
         });
-        let response = await post();
-        if (response.status === 401) {
-            // The cached token was refused (a clock that moved, a key that changed): never reuse it.
-            // One more try with a fresh token; a second 401 is the answer.
-            this.secret.token = undefined;
-            response = await post();
-            if (response.status === 401) {
-                this.secret.token = undefined;
-            }
-        }
         if (!response.ok) {
             let reason = '';
             try {
@@ -129,7 +132,7 @@ export class Rest {
         }
     }
 
-    /** What JSON.stringify shows: never the API key, the master key or the token. */
+    /** What JSON.stringify shows: never the API key or the master key. */
     toJSON() {
         return {app: this.app, address: this.address, apiKey: '[hidden]', encryptionKey: this.secret.masterKey ? '[hidden]' : null};
     }

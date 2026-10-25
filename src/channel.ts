@@ -3,7 +3,17 @@ import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, 
 import { decryptEvent, encryptEvent, eventJson, importChannelKey } from "./encryption";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
+import { clientEventName } from "./client_events";
+import { throwLater } from "./callbacks";
 import Topics from "./topics";
+
+/** The name a client event is sent under: `client-` in front, unless it has it. Throws for no name. */
+function outgoingName(event: string): string {
+	if (typeof event !== "string" || event === "") {
+		throw new Error("Pikoman: a client event needs a name");
+	}
+	return clientEventName(event);
+}
 
 /** Calls `on(event, fn)` listeners with the event's data (and the sender, for client events). */
 export class EventsHandler {
@@ -123,10 +133,16 @@ export class Channel {
 		this.opcodes.on(MessageType.Refused, fn);
 	}
 
+	/** Forgets the `refused`, `serverMessage` (and other such) callbacks, and stops any pending join. */
 	clear() {
+		clearTimeout(this.revokedTimer);
 		this.opcodes.clear();
 	}
 
+	/**
+	 * Events by name: `fn(data)` for what a backend published. Members' client events are named
+	 * `client-…` (see `PrivateChannel.onClient`), so they never reach a handler for a published event.
+	 */
 	on(event: string, fn: Fn) {
 		this.messages.on(event, fn);
 		return this;
@@ -207,15 +223,20 @@ export class PrivateChannel extends Channel {
 	}
 
 	join() {
+		const clientId = this.pikoman.getClientId();
+		// Not connected: the channel joins when the server says `connected`.
+		if (clientId === "") return;
 		(async () => {
 			try {
 				const answer = await this.authenticator.authenticate(
-					this.pikoman.getClientId(),
+					clientId,
 					this.name,
-					this.pikoman.getOptions(),
+					{ ...this.pikoman.getOptions(), app: this.pikoman.getAppId() },
 				);
 				const token = await this.accept(answer);
-				if (token !== undefined) {
+				// Not if the app left the channel meanwhile, or the connection changed: the token is
+				// for the old one, and the new one joins with a token of its own.
+				if (token !== undefined && this.pikoman.hasChannel(this) && this.pikoman.getClientId() === clientId) {
 					this.pikoman.send({ op: "join", channel: this.name, token });
 				}
 			} catch (e) {
@@ -233,30 +254,48 @@ export class PrivateChannel extends Channel {
 		this.opcodes.dispatch(MessageType.Refused, [code]);
 	}
 
-	/** Client events from other connections: `fn(clientId, event, data)`. */
+	/** Every client event from other connections: `fn(clientId, event, data)`, `event` named `client-…`. */
 	clientMessage(fn: Fn) {
 		this.opcodes.on(MessageType.ClientMessage, fn);
 	}
 
+	/**
+	 * One client event from other connections, by name with or without `client-` (`"typing"` and
+	 * `"client-typing"` are the same): `fn(clientId, data)`. The same as `on("client-typing", fn)`.
+	 */
+	onClient(event: string, fn: Fn) {
+		return this.on(clientEventName(event), fn);
+	}
+
+	offClient(event: string, fn: Fn) {
+		return this.off(clientEventName(event), fn);
+	}
+
 	handle(message: ChannelMessage) {
 		if (message.op === "client_event") {
-			this.messages.dispatchClient(message.event, message.from, message.data);
-			this.opcodes.dispatch(MessageType.ClientMessage, [message.from, message.event, message.data]);
+			// Under its client- name, also when the sender left it out (an older client), so a
+			// member can never reach a handler for a published event.
+			const event = clientEventName(message.event ?? "");
+			this.messages.dispatchClient(event, message.from, message.data);
+			this.opcodes.dispatch(MessageType.ClientMessage, [message.from, event, message.data]);
 			return;
 		}
 		super.handle(message);
 	}
 
 	/**
-	 * `toAll` also delivers the event to this connection. Throws for data with no JSON form (a
-	 * function, a symbol); `undefined` is sent as `null`.
+	 * Sends a client event to the channel's other members, named `client-…`: `send("typing")`
+	 * sends `client-typing`, which they get with `onClient("typing")`. `toAll` also delivers it to
+	 * this connection. Throws for data with no JSON form (a function, a symbol); `undefined` is sent
+	 * as `null`.
 	 */
 	send(event: string, data?: any, toAll = false) {
+		const name = outgoingName(event);
 		eventJson(data);
 		this.pikoman.send({
 			op: "send",
 			channel: this.name,
-			event,
+			event: name,
 			data: data === undefined ? null : data,
 			echo: toAll,
 		});
@@ -436,35 +475,36 @@ export class EncryptedChannel extends PrivateChannel {
 	}
 
 	/**
-	 * Runs the user's handlers. One that throws must not break the chain of incoming messages
-	 * (every later message would be skipped, and in Node the unhandled rejection ends the process),
-	 * so its error is thrown again on its own, as from any other event handler.
+	 * Runs the user's handlers (each isolated already, see callbacks.ts). Nothing thrown may break
+	 * the chain of incoming messages (every later message would be skipped, and in Node the
+	 * unhandled rejection ends the process), so an error is thrown again on its own.
 	 */
 	private outside(run: () => void) {
 		try {
 			run();
 		} catch (e) {
-			setTimeout(() => {
-				throw e;
-			}, 0);
+			throwLater(e);
 		}
 	}
 
 	/**
-	 * Encrypts and sends a client event. `toAll` also delivers it to this connection. The promise
-	 * settles once it is handed to the socket; it rejects if there is no channel key yet, if the
-	 * connection is offline (nothing was sent), or if the data has no JSON form.
+	 * Encrypts and sends a client event, named `client-…` as in `PrivateChannel.send`. `toAll` also
+	 * delivers it to this connection. The promise settles once it is handed to the socket; it
+	 * rejects if there is no channel key yet, if the connection is offline (nothing was sent), or if
+	 * the data has no JSON form.
 	 */
 	send(event: string, data?: any, toAll = false): Promise<void> {
 		const sent = this.outgoing.then(async () => {
+			// The name as sent is the name the receivers decrypt with.
+			const name = outgoingName(event);
 			if (!this.key) {
 				throw new Error(`No channel key for ${this.name} yet`);
 			}
 			const handed = this.pikoman.send({
 				op: "send",
 				channel: this.name,
-				event,
-				data: await encryptEvent(this.name, event, data, await this.key, "client"),
+				event: name,
+				data: await encryptEvent(this.name, name, data, await this.key, "client"),
 				echo: toAll,
 			});
 			if (!handed) {

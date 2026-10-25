@@ -10,53 +10,96 @@ import {
 } from "./types";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
+import { checkAppId, checkedAddress } from "./names";
+import { inBrowser } from "./redact";
 
 const defaultOptions: Options = {
 	// 2.0 runs on next.pikoman.se until ws.pikoman.se switches over; 1.0.0 goes back to ws.pikoman.se.
 	ws_address: "wss://next.pikoman.se",
 };
+
+/**
+ * Outside a browser (a bot, a backend, a script) the websocket address must be `wss://`, or
+ * `ws://` to localhost: a typo would otherwise send join tokens and messages in the clear. In a
+ * page, the page's own scheme already decides, and a dev server on another machine may use ws://.
+ */
+function checkedOptions(options: Options): Options {
+	if (!inBrowser() && options.ws_address) {
+		return { ...options, ws_address: checkedAddress(options.ws_address, "wss", "ws") };
+	}
+	return options;
+}
+
+/**
+ * Reconnecting waits a random time below a ceiling that starts at 1 s and doubles with every
+ * attempt that fails, up to 30 s ("full jitter"), so clients that lost the server at the same
+ * moment come back spread out instead of all at once.
+ */
+const RECONNECT_FIRST_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+/**
+ * A connection that lasts this long counts as working: the ceiling starts over from 1 s. Not at
+ * `connected` itself, or a server in a crash loop, or one that closes connections right after
+ * `connected` (1008, 4429), would get every client back within a second each time.
+ */
+const STABLE_MS = 30000;
+/** Quiet for this long: ask the server for a pong. */
+const PING_AFTER_MS = 6500;
+/**
+ * Nothing heard for this long, not even a pong (or, for a new socket, `connected`): the
+ * connection is dead, or never got through. The socket is closed and another one tried.
+ */
+const SILENCE_MS = 18500;
+
 export default class Pikoman {
 	private readonly appId: string;
 	private clientId: string = "";
 	private timeoutOffline: any = 0;
 	private timeoutSendPing: any = 0;
 	private timeoutReconnect: any = 0;
-	/** Set by close code 4403 (the connection's API key was deleted): no reconnect after that. */
+	private timeoutStable: any = 0;
+	/** Attempts since the last connection that lasted STABLE_MS: how long the next wait may be. */
+	private attempts = 0;
+	/** Set by close(), and by close code 4403 (the connection's API key was deleted): no reconnect. */
 	private closedForGood = false;
 	private status = ConnectionStatus.Loading;
 	private channels = new Map<string, Channel>();
 	private messages = new OpCodeHandler<ConnectionStatus>(this);
 	private options: Options = defaultOptions;
-	private ws: WebSocket;
+	/**
+	 * The one socket this client listens to, open or still connecting. A socket it gives up on is
+	 * closed and its handlers removed before another is made, so two can never deliver events.
+	 */
+	private ws?: WebSocket;
+	// Leaving the page (a link, the back button) can keep it in the browser's back/forward cache
+	// with the socket open, so presence channels would still count this visitor until the server
+	// drops the silent connection. Close it on the way out, and connect again at once if the page
+	// is shown from that cache. Switching tabs fires neither.
+	private readonly onPageHide = () => this.closeQuietly();
+	private readonly onPageShow = (event: Event) => {
+		if (!(event as PageTransitionEvent).persisted || this.closedForGood) return;
+		// The app heard nothing when the page was hidden. As for a new page, it hears `online` once
+		// connected, or `offline` if that fails.
+		this.status = ConnectionStatus.Loading;
+		this.connect();
+	};
 
 	constructor(appId: string, options = defaultOptions) {
-		this.appId = appId;
-		this.options = {
+		this.appId = checkAppId(appId);
+		this.options = checkedOptions({
 			...defaultOptions,
 			...options,
-		};
-		this.ws = new WebSocket(this.getAppWsUrl());
+		});
+		// Bound, so they work however they are called: as callbacks, or through a proxy such as a
+		// Solid store, which would drop what close() writes.
 		this.send = this.send.bind(this);
 		this.sendPing = this.sendPing.bind(this);
-		this.onOffline = this.onOffline.bind(this);
-		this.bindWebSocket(this.ws);
-		// Leaving the page (a link, the back button) can keep it in the browser's back/forward cache
-		// with the socket open, so presence channels would still count this visitor until the server
-		// drops the silent connection. Close it on the way out, and connect again at once if the page
-		// is shown from that cache. Switching tabs fires neither.
+		this.close = this.close.bind(this);
+		this.connect();
 		if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-			window.addEventListener("pagehide", () => this.closeQuietly());
-			window.addEventListener("pageshow", (event) => {
-				if ((event as PageTransitionEvent).persisted) this.reconnect(0);
-			});
+			window.addEventListener("pagehide", this.onPageHide);
+			window.addEventListener("pageshow", this.onPageShow);
 		}
-	}
-
-	private bindWebSocket(ws: WebSocket) {
-		ws.onopen = this.onOpen.bind(this);
-		ws.onmessage = this.onMessage.bind(this);
-		ws.onclose = this.onClose.bind(this);
-		ws.onerror = this.onOffline.bind(this);
 	}
 
 	public getStatus() {
@@ -68,7 +111,7 @@ export default class Pikoman {
 	}
 
 	public setOptions(options: Options) {
-		this.options = options;
+		this.options = checkedOptions(options);
 	}
 
 	public getAuthUrl() {
@@ -95,34 +138,86 @@ export default class Pikoman {
 		this.channels.forEach((channel) => channel.join());
 	}
 
-	/**
-	 * Closes the socket without the usual "lost the connection" handling, whose 5 s reconnect would
-	 * otherwise run when a page comes back from the back/forward cache.
-	 */
-	private closeQuietly() {
+	/** Opens a socket, after closing the one before it: never two at once. */
+	private connect() {
+		clearTimeout(this.timeoutReconnect);
+		this.dropSocket();
+		if (this.closedForGood) return;
+		const ws = new WebSocket(this.getAppWsUrl());
+		this.ws = ws;
+		// Each handler checks that its socket is still the one: belt and braces, since a socket
+		// given up on has no handlers left. The socket opening changes nothing: the connection is
+		// online when the server says `connected`.
+		ws.onmessage = (event: MessageEvent) => {
+			if (ws === this.ws) this.onMessage(event);
+		};
+		ws.onclose = (event: CloseEvent) => {
+			if (ws === this.ws) this.onClose(event);
+		};
+		// An error is always followed by a close, which is where it is handled.
+		ws.onerror = null;
+		this.watch();
+	}
+
+	/** Stops listening to the current socket and closes it. */
+	private dropSocket() {
+		const ws = this.ws;
+		if (!ws) return;
+		this.ws = undefined;
+		ws.onopen = null;
+		ws.onmessage = null;
+		ws.onclose = null;
+		ws.onerror = null;
+		try {
+			ws.close();
+		} catch (e) {
+			// Already closed, or never opened: nothing more to do.
+		}
+	}
+
+	private stopTimers() {
 		clearTimeout(this.timeoutOffline);
 		clearTimeout(this.timeoutSendPing);
 		clearTimeout(this.timeoutReconnect);
-		this.ws.onclose = null;
-		this.ws.onerror = null;
-		this.ws.close();
+		clearTimeout(this.timeoutStable);
+	}
+
+	/**
+	 * Closes the socket without the usual "lost the connection" handling, which would connect
+	 * again: the page is being left, and a page shown again from the back/forward cache connects
+	 * by itself (pageshow).
+	 */
+	private closeQuietly() {
+		this.stopTimers();
+		this.dropSocket();
 		this.status = ConnectionStatus.Offline;
 		this.clientId = "";
 	}
 
-	private reconnect(delay = 5000) {
+	/**
+	 * Closes the connection for good: it never reconnects, no callback is called again, every timer
+	 * is stopped and the page listeners are removed, so nothing keeps the client alive. For a
+	 * single-page app that no longer needs it (a view that goes away); a new `Pikoman` connects
+	 * again. The server ends every membership when the socket closes.
+	 */
+	close() {
+		this.closedForGood = true;
+		this.closeQuietly();
+		if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+			window.removeEventListener("pagehide", this.onPageHide);
+			window.removeEventListener("pageshow", this.onPageShow);
+		}
+		this.channels.forEach((channel) => channel.clear());
+		this.clear();
+	}
+
+	/** Waits a random time below the current ceiling (see RECONNECT_FIRST_MS), then connects. */
+	private scheduleReconnect() {
 		if (this.closedForGood) return;
-		this.ws.close();
 		clearTimeout(this.timeoutReconnect);
-		this.timeoutReconnect = setTimeout(() => {
-			const ws = new WebSocket(this.getAppWsUrl());
-			ws.onopen = () => {
-				this.ws = ws;
-				this.bindWebSocket(ws);
-				this.clearOfflineTimeout();
-			};
-			ws.onerror = () => this.reconnect();
-		}, delay);
+		const ceiling = Math.min(RECONNECT_MAX_MS, RECONNECT_FIRST_MS * 2 ** this.attempts);
+		this.attempts = Math.min(this.attempts + 1, 16);
+		this.timeoutReconnect = setTimeout(() => this.connect(), Math.floor(Math.random() * ceiling));
 	}
 
 	private onMessage({ data }: { data: string }) {
@@ -133,7 +228,7 @@ export default class Pikoman {
 			console.error("Pikoman: could not read message from server");
 			return;
 		}
-		this.clearOfflineTimeout();
+		this.watch();
 		switch (message.op) {
 			case "connected": {
 				this.client(message.id);
@@ -160,48 +255,69 @@ export default class Pikoman {
 		}
 	}
 
-	/** A new connection id: every channel joins again, with new tokens. */
+	/**
+	 * The server said `connected`: a new connection id, and the connection is online. Every channel
+	 * joins again, with new tokens, before the app is told (`online`), so a callback that throws
+	 * cannot keep the channels out, and one that joins a channel does not join it twice.
+	 */
 	private client(clientId: string) {
 		this.clientId = clientId;
-		this.messages.dispatch(ConnectionStatus.Online, [true]);
-		this.clearOfflineTimeout();
-		this.rejoin();
-	}
-
-	private onOpen() {
 		this.status = ConnectionStatus.Online;
+		clearTimeout(this.timeoutStable);
+		this.timeoutStable = setTimeout(() => {
+			this.attempts = 0;
+		}, STABLE_MS);
+		this.rejoin();
+		this.messages.dispatch(ConnectionStatus.Online, [true]);
 	}
 
-	private onClose(...data: any[]) {
-		this.status = ConnectionStatus.Offline;
+	/** The current socket closed. */
+	private onClose(event?: CloseEvent) {
+		this.lost(event);
+	}
+
+	/**
+	 * The socket closed, or went silent: let it go and connect again after a while (after 4403,
+	 * never), and only then tell the app, so a callback that throws cannot stop the reconnect. The
+	 * app is told once per lost connection: not again for every attempt that fails after it, nor
+	 * for a socket that opened and closed before `connected`.
+	 */
+	private lost(event?: CloseEvent) {
+		this.stopTimers();
+		this.dropSocket();
 		this.clientId = "";
-		this.messages.dispatch(ConnectionStatus.Offline, [false, ...data]);
+		const wasOffline = this.status === ConnectionStatus.Offline;
+		this.status = ConnectionStatus.Offline;
 		// 4403: the API key this connection signed in with was deleted. Connecting again would only
 		// be refused again, so stay offline.
-		if ((data[0] as CloseEvent | undefined)?.code === 4403) {
+		const revoked = event?.code === 4403;
+		if (revoked) {
 			this.closedForGood = true;
-			clearTimeout(this.timeoutOffline);
-			clearTimeout(this.timeoutSendPing);
-			clearTimeout(this.timeoutReconnect);
-			this.messages.dispatch(ConnectionStatus.Revoked, [data[0]]);
-			return;
+		} else {
+			this.scheduleReconnect();
 		}
-		this.reconnect();
+		if (!wasOffline) {
+			this.messages.dispatch(ConnectionStatus.Offline, [false, event]);
+		}
+		if (revoked) {
+			this.messages.dispatch(ConnectionStatus.Revoked, [event]);
+		}
 	}
 
-	private onOffline(...data: any[]) {
-		this.onClose(data);
-	}
-
-	private clearOfflineTimeout() {
+	/** Heard from the server, or a new socket: ping after a quiet while, give up after a long one. */
+	private watch() {
 		clearTimeout(this.timeoutOffline);
 		clearTimeout(this.timeoutSendPing);
-		this.timeoutOffline = setTimeout(this.onOffline, 18500);
-		this.timeoutSendPing = setTimeout(this.sendPing, 6500);
+		this.timeoutOffline = setTimeout(() => this.lost(), SILENCE_MS);
+		this.timeoutSendPing = setTimeout(this.sendPing, PING_AFTER_MS);
 	}
 
 	private sendPing() {
 		this.send({ op: "ping" });
+	}
+
+	getAppId(): string {
+		return this.appId;
 	}
 
 	getClientId(): string {
@@ -228,6 +344,11 @@ export default class Pikoman {
 		}
 	}
 
+	/**
+	 * The connection was lost: `fn(false, closeEvent)`, once. The client connects again after a
+	 * random wait of up to 1 s, growing to up to 30 s while attempts fail, and starting over from
+	 * 1 s once a connection has lasted 30 s.
+	 */
 	offline(fn: Fn) {
 		this.messages.on(ConnectionStatus.Offline, fn);
 	}
@@ -258,7 +379,7 @@ export default class Pikoman {
 	}
 
 	isConnected() {
-		return this.ws.readyState === WebSocket.OPEN && this.clientId !== "";
+		return this.ws !== undefined && this.ws.readyState === WebSocket.OPEN && this.clientId !== "";
 	}
 
 	private addChannel<T extends Channel>(channelName: string, create: () => T): T {
@@ -331,7 +452,7 @@ export default class Pikoman {
 	/** Sends a message if connected. Returns whether it was handed to the socket. */
 	send(message: ClientMessage): boolean {
 		if (this.isConnected()) {
-			this.ws.send(JSON.stringify(message));
+			(this.ws as WebSocket).send(JSON.stringify(message));
 			return true;
 		}
 		return false;

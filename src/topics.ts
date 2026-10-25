@@ -1,4 +1,5 @@
 import {Fn} from "./types";
+import {callIsolated} from "./callbacks";
 
 export class Topics {
     private readonly topics = new Map<string, Fn[]>();
@@ -83,8 +84,9 @@ export class Topics {
         this.topics.clear();
     }
 
+    /** Calls the topic's observers, each isolated: one that throws does not stop the others (callbacks.ts). */
     dispatch(topic: string, ...data: any[]) {
-        this.getObservers(topic).forEach(fn => fn.apply(this.context, data));
+        this.getObservers(topic).forEach(fn => callIsolated(fn, this.context, data));
     }
 }
 

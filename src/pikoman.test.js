@@ -121,28 +121,62 @@ describe('Private and presence channels', () => {
     expect(refused.args).toEqual([['join_refused']]);
   });
 
-  it('Should send client events with echo for toAll', async () => {
+  it('Should send client events named client-…, with echo for toAll', async () => {
     const {pikoman, socket} = connect();
     const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
     await flush();
     channel.send('vote', 5, true);
     channel.send('typing');
+    // A name that already has the prefix keeps it, once.
+    channel.send('client-cursor', {x: 1});
     expect(socket.sent.slice(1)).toEqual([
-      {op: 'send', channel: 'presence-room', event: 'vote', data: 5, echo: true},
-      {op: 'send', channel: 'presence-room', event: 'typing', data: null, echo: false},
+      {op: 'send', channel: 'presence-room', event: 'client-vote', data: 5, echo: true},
+      {op: 'send', channel: 'presence-room', event: 'client-typing', data: null, echo: false},
+      {op: 'send', channel: 'presence-room', event: 'client-cursor', data: {x: 1}, echo: false},
     ]);
+    expect(() => channel.send('')).toThrow(/name/);
+    expect(() => channel.send(undefined)).toThrow(/name/);
+    expect(socket.sent).toHaveLength(4);
   });
 
-  it('Should hand client events to on(event) with the sender', () => {
+  it('Should hand client events to onClient(event) with the sender', () => {
     const {pikoman, receive} = connect();
     const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
     const onVote = sinon.spy();
+    const onVoteByFullName = sinon.spy();
+    const onPrefixed = sinon.spy();
     const onClientMessage = sinon.spy();
-    channel.on('vote', onVote);
+    channel.onClient('vote', onVote);
+    channel.onClient('client-vote', onVoteByFullName);
+    channel.on('client-vote', onPrefixed);
     channel.clientMessage(onClientMessage);
-    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'vote', data: 5});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'client-vote', data: 5});
     expect(onVote.args).toEqual([['c_ola', 5]]);
-    expect(onClientMessage.args).toEqual([['c_ola', 'vote', 5]]);
+    expect(onVoteByFullName.args).toEqual([['c_ola', 5]]);
+    expect(onPrefixed.args).toEqual([['c_ola', 5]]);
+    expect(onClientMessage.args).toEqual([['c_ola', 'client-vote', 5]]);
+
+    channel.offClient('vote', onVote);
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'client-vote', data: 6});
+    expect(onVote.callCount).toBe(1);
+    expect(onVoteByFullName.callCount).toBe(2);
+  });
+
+  it('Should keep client events and published events apart, whatever a member names an event', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    const published = sinon.spy();
+    const fromMembers = sinon.spy();
+    channel.on('order-shipped', published);
+    channel.onClient('order-shipped', fromMembers);
+    // From the backend: on(name) only.
+    receive({op: 'event', channel: 'presence-room', event: 'order-shipped', data: {id: 1}});
+    // From a member, named like a published event (an older client sends names as they are):
+    // it arrives as client-order-shipped and never reaches the handler for the published one.
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_eve', event: 'order-shipped', data: {id: 666}});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'client-order-shipped', data: {id: 2}});
+    expect(published.args).toEqual([[{id: 1}]]);
+    expect(fromMembers.args).toEqual([['c_eve', {id: 666}], ['c_ola', {id: 2}]]);
   });
 
   it('Should catch every event with AllEvents', () => {
@@ -151,8 +185,9 @@ describe('Private and presence channels', () => {
     channel.setEventsHandler(new AllEvents());
     const all = sinon.spy();
     channel.on('anything', all);
-    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'vote', data: 5});
-    expect(all.args).toEqual([['c_ola', 'vote', 5]]);
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'client-vote', data: 5});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'vote', data: 6});
+    expect(all.args).toEqual([['c_ola', 'client-vote', 5], ['c_ola', 'client-vote', 6]]);
   });
 
   it('Should keep the member list', () => {
@@ -260,9 +295,9 @@ describe('Private and presence channels', () => {
       bots: {c_bot: 'k_1'},
     });
     const fromBot = [];
-    channel.on('status', (from, data) => fromBot.push([from, channel.isBot(from), data]));
-    receive({op: 'client_event', channel: 'presence-room', from: 'c_bot', event: 'status', data: 'shipped'});
-    receive({op: 'client_event', channel: 'presence-room', from: 'c_anna', event: 'status', data: 'shipped'});
+    channel.onClient('status', (from, data) => fromBot.push([from, channel.isBot(from), data]));
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_bot', event: 'client-status', data: 'shipped'});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_anna', event: 'client-status', data: 'shipped'});
     expect(fromBot).toEqual([['c_bot', true, 'shipped'], ['c_anna', false, 'shipped']]);
   });
 

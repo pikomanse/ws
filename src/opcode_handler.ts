@@ -1,4 +1,5 @@
 import {Fn, MessageCallback} from "./types";
+import {callIsolated} from "./callbacks";
 
 export class OpCodeHandler<T extends number> {
     private messages = Array<MessageCallback<T>>();
@@ -14,9 +15,10 @@ export class OpCodeHandler<T extends number> {
             .map(({fn}) => fn);
     }
 
+    /** Each callback isolated: one that throws stops neither the others nor the library (callbacks.ts). */
     // @ts-ignore
     private applyThis(context: SendData, data: Array<any>) {
-        return (callback: Fn) => callback.apply(context, data);
+        return (callback: Fn) => callIsolated(callback, context, data);
     }
 
     public on(type: T, fn: Fn) {

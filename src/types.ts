@@ -37,6 +37,8 @@ export interface MessageCallback<T extends number> {
 export interface Options {
     ws_address?: string;
     auth_url?: string;
+    /** The app id. Pikoman sets it in the options it gives an authenticator; never set it yourself. */
+    app?: string;
     /**
      * When the server takes a channel away because the key that signed its token was deleted
      * (`key_revoked`), join it again with a new token: after 1 s, 2 s and 4 s, then report
@@ -63,9 +65,12 @@ export interface Authenticator {
     authenticate: (clientId: string, channelName: string, options: Options) => Promise<string | JoinAuthorization>;
 }
 
-/** Codes from the server. */
+/**
+ * Codes from the server. `data_too_large`: a client event's data was over the server's cap (12 KiB
+ * by default). `invalid_event_name`: a client event not named `client-…`.
+ */
 export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited' | 'not_encrypted'
-    | 'channel_full' | 'member_data_too_large' | 'key_revoked';
+    | 'channel_full' | 'member_data_too_large' | 'key_revoked' | 'data_too_large' | 'invalid_event_name';
 
 /**
  * Codes `refused` also reports from the client itself, in encrypted channels: a message that did

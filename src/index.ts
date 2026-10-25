@@ -23,7 +23,9 @@ import {
     requestToken,
     authorizationHeader,
     MAX_TOKEN_LIFETIME,
+    REQUEST_TOKEN_LIFETIME,
     KeyWithId,
+    SignedRequest,
 } from './keys';
 import {
     channelKey,
@@ -62,6 +64,7 @@ export {
     requestToken,
     authorizationHeader,
     MAX_TOKEN_LIFETIME,
+    REQUEST_TOKEN_LIFETIME,
     channelKey,
     importChannelKey,
     importMasterKey,
@@ -78,5 +81,5 @@ export {
     Pikoman
 };
 export type SendData = SendDataType;
-export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions};
+export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, SignedRequest, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions};
 export default Pikoman;

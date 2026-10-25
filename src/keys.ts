@@ -10,8 +10,24 @@ import {fromBase64, fromBase64Url, subtle, toBase64Url, utf8} from './encoding';
 /** PKCS#8 DER of an Ed25519 private key, before its 32-byte seed. */
 const PKCS8_ED25519_PREFIX = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
 
-/** The longest a request token or a join token may live, in seconds. */
+/** The longest a join token may live, in seconds. */
 export const MAX_TOKEN_LIFETIME = 600;
+
+/** A request token lives one minute and is made for one request: never reused (KEYS.md). */
+export const REQUEST_TOKEN_LIFETIME = 60;
+
+/** The one HTTP request a request token is for. The token is bound to all three. */
+export interface SignedRequest {
+    /** `GET`, `POST`, `DELETE`, … in any case. */
+    method: string;
+    /**
+     * The URL the request goes to, or its path, with the query string, as it is sent. Signed as
+     * fetch sends it (`requestTarget`): an empty query, a lone `?`, is left out.
+     */
+    url: string;
+    /** The body exactly as it is sent (text is sent as UTF-8); none for a request without one. */
+    body?: string | Uint8Array | null;
+}
 
 /**
  * A token's lifetime in whole seconds (JWT times are integers): rounded down, and refused unless
@@ -118,21 +134,59 @@ async function toKeyWithId(key: string | KeyWithId): Promise<KeyWithId> {
 }
 
 /**
- * A token for one HTTP request to the API: `{"iss": appId, "iat": now, "exp": now + lifetime}`,
- * signed with an API key (`sk_…` secret, or an imported key and its id). Lifetime in whole
- * seconds, at most 600.
+ * The path and query string of a URL as fetch sends them: `pathname + search` of the URL as the
+ * URL parser writes it, which is what Node's fetch puts on the request line. No scheme, host or
+ * fragment; `/a b` is sent as `/a%20b`, and an empty query is left out (`/a?` is sent as `/a`).
  */
-export async function requestToken(apiKey: string | KeyWithId, appId: string, lifetimeSeconds = 300): Promise<string> {
+export function requestTarget(url: string): string {
+    const parsed = new URL(url, 'https://api.invalid');
+    return parsed.pathname + parsed.search;
+}
+
+/** SHA-256 of the body, base64url without padding; for no body, of the empty string. */
+export async function bodyHash(body?: string | Uint8Array | null): Promise<string> {
+    let bytes: Uint8Array;
+    if (body === undefined || body === null) {
+        bytes = new Uint8Array(0);
+    } else if (typeof body === 'string') {
+        bytes = utf8(body);
+    } else if (ArrayBuffer.isView(body)) {
+        bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+    } else {
+        throw new Error('A request body to sign is text or bytes, exactly as it is sent');
+    }
+    return toBase64Url(new Uint8Array(await subtle().digest('SHA-256', bytes)));
+}
+
+/**
+ * A token for one HTTP request to the API, signed with an API key (`sk_…` secret, or an imported
+ * key and its id). It names the app, and binds the method, the path with its query and the body:
+ * `{"iss", "iat", "exp": iat + 60, "htm": "POST", "htu": "/orders/created", "bh": <SHA-256 of
+ * the body>}`. Make a new one for every request; one seen in a log works for nothing else, and
+ * not for long.
+ */
+export async function requestToken(apiKey: string | KeyWithId, appId: string, request: SignedRequest): Promise<string> {
     if (!appId) {
         throw new Error('Need the app id');
     }
-    const lifetime = tokenLifetime(lifetimeSeconds);
+    if (!request || typeof request !== 'object') {
+        throw new Error('A request token is made for one request: pass { method, url, body } (it no longer takes a lifetime)');
+    }
+    if (typeof request.method !== 'string' || !/^[A-Za-z]+$/.test(request.method)) {
+        throw new Error('A request token needs the HTTP method, e.g. "POST"');
+    }
+    if (typeof request.url !== 'string' || request.url === '') {
+        throw new Error('A request token needs the URL or path of the request');
+    }
+    const htm = request.method.toUpperCase();
+    const htu = requestTarget(request.url);
+    const bh = await bodyHash(request.body);
     const {key, keyId} = await toKeyWithId(apiKey);
     const iat = Math.floor(Date.now() / 1000);
-    return signToken({iss: appId, iat, exp: iat + lifetime}, key, keyId);
+    return signToken({iss: appId, iat, exp: iat + REQUEST_TOKEN_LIFETIME, htm, htu, bh}, key, keyId);
 }
 
-/** The `Authorization` header value for one HTTP request: `Bearer <jwt>`. */
-export async function authorizationHeader(apiKey: string | KeyWithId, appId: string, lifetimeSeconds = 300): Promise<string> {
-    return `Bearer ${await requestToken(apiKey, appId, lifetimeSeconds)}`;
+/** The `Authorization` header value for one HTTP request: `Bearer <jwt>`, see `requestToken`. */
+export async function authorizationHeader(apiKey: string | KeyWithId, appId: string, request: SignedRequest): Promise<string> {
+    return `Bearer ${await requestToken(apiKey, appId, request)}`;
 }

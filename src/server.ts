@@ -14,8 +14,9 @@ export {
     requestToken,
     authorizationHeader,
     MAX_TOKEN_LIFETIME,
+    REQUEST_TOKEN_LIFETIME,
 } from './keys';
-export type {KeyWithId} from './keys';
+export type {KeyWithId, SignedRequest} from './keys';
 export {
     channelKey,
     importChannelKey,

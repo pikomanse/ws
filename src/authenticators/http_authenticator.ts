@@ -1,8 +1,10 @@
 import {Authenticator, JoinAuthorization, Options} from "../types";
+import {checkChannelName, checkConnectionId} from "../names";
 
 /**
  * Asks the app's backend for a join token: `GET {auth_url}/{clientId}-{channelName}`, which
- * answers `{"token": "..."}`. For a `private-encrypted-` channel it also answers the channel key,
+ * answers `{"token": "..."}`. Both names are checked first against what the server takes, so a
+ * channel name from a URL parameter cannot point the request at another path on the backend. For a `private-encrypted-` channel it also answers the channel key,
  * `{"token": "...", "channel_key": "<base64>"}`, and then this returns both.
  */
 export default class Http_authenticator implements Authenticator {
@@ -13,7 +15,7 @@ export default class Http_authenticator implements Authenticator {
         if (!options.auth_url) {
             throw new Error(`Need auth_url`);
         }
-        return `${options.auth_url}/${clientId}-${channelName}`;
+        return `${options.auth_url}/${checkConnectionId(clientId)}-${checkChannelName(channelName)}`;
     }
 
     async authenticate(clientId: string, channelName: string, options: Options): Promise<string | JoinAuthorization> {

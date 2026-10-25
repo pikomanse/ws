@@ -17,7 +17,7 @@ import {installWebGlobals} from './web_globals';
 // Test keys only.
 const MASTER = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
 const CHANNEL = 'private-encrypted-test';
-const TEST_CHANNEL_KEY = 'BXZ3eZVE7qg3gVuvKUOimdghY3hQ1Gm0h9uULbkIQb0=';
+const TEST_CHANNEL_KEY = 'tYiq/FY0unmbT9GVQeR6NNCdJhPvlbl6+70+E0B0cS0=';
 const SECRET = `sk_k_3f9a1c0e5b7d2468.${Buffer.alloc(32, 7).toString('base64url')}`;
 
 /** Stands in for the WebSocket, so no test touches the network. */
@@ -124,9 +124,11 @@ describe('Encrypted channels', () => {
         const channel = pikoman.listenPrivate(CHANNEL, withKey);
         await until(() => socket.sent.length > 0);
         const onMessage = jest.fn();
+        const onClientMessage = jest.fn();
         const serverMessage = jest.fn();
         const clientMessage = jest.fn();
         channel.on('message', onMessage);
+        channel.onClient('message', onClientMessage);
         channel.serverMessage(serverMessage);
         channel.clientMessage(clientMessage);
 
@@ -134,13 +136,17 @@ describe('Encrypted channels', () => {
         for (let n = 1; n <= 5; n++) {
             messages.push({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', {n}, TEST_CHANNEL_KEY)});
         }
-        messages.push({op: 'client_event', channel: CHANNEL, from: 'c_ola', event: 'message', data: await encryptEvent(CHANNEL, 'message', 'from Ola', TEST_CHANNEL_KEY, 'client')});
+        messages.push({op: 'client_event', channel: CHANNEL, from: 'c_ola', event: 'client-message', data: await encryptEvent(CHANNEL, 'client-message', 'from Ola', TEST_CHANNEL_KEY, 'client')});
+        // From an older client, which sent the name without client-: decrypted with the name it was
+        // sent under, handled under its client- name.
+        messages.push({op: 'client_event', channel: CHANNEL, from: 'c_old', event: 'message', data: await encryptEvent(CHANNEL, 'message', 'from an old client', TEST_CHANNEL_KEY, 'client')});
         messages.forEach(receive);
-        await until(() => onMessage.mock.calls.length >= 6);
+        await until(() => onClientMessage.mock.calls.length >= 2);
 
-        expect(onMessage.mock.calls).toEqual([[{n: 1}], [{n: 2}], [{n: 3}], [{n: 4}], [{n: 5}], ['c_ola', 'from Ola']]);
+        expect(onMessage.mock.calls).toEqual([[{n: 1}], [{n: 2}], [{n: 3}], [{n: 4}], [{n: 5}]]);
+        expect(onClientMessage.mock.calls).toEqual([['c_ola', 'from Ola'], ['c_old', 'from an old client']]);
         expect(serverMessage.mock.calls).toEqual([1, 2, 3, 4, 5].map((n) => [{n}, 'message']));
-        expect(clientMessage.mock.calls).toEqual([['c_ola', 'message', 'from Ola']]);
+        expect(clientMessage.mock.calls).toEqual([['c_ola', 'client-message', 'from Ola'], ['c_old', 'client-message', 'from an old client']]);
     });
 
     it('Should drop what does not decrypt and report decrypt_failed', async () => {
@@ -152,7 +158,7 @@ describe('Encrypted channels', () => {
         channel.on('message', on);
         channel.refused(refused);
 
-        const otherKey = await channelKey(MASTER, 'private-encrypted-other');
+        const otherKey = await channelKey(MASTER, 'app-test', 'private-encrypted-other');
         receive({op: 'event', channel: CHANNEL, event: 'message', data: {text: 'plain'}});
         receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', 1, otherKey)});
         receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'other-event', 2, TEST_CHANNEL_KEY)});
@@ -226,12 +232,15 @@ describe('Encrypted channels', () => {
         await channel.send('vote', {up: true}, true);
         await channel.send('typing');
         const [vote, typing] = socket.sent.slice(1);
-        expect(vote).toMatchObject({op: 'send', channel: CHANNEL, event: 'vote', echo: true});
+        // Named client-…, and encrypted under that name: the one the members decrypt with.
+        expect(vote).toMatchObject({op: 'send', channel: CHANNEL, event: 'client-vote', echo: true});
         expect(Object.keys(vote.data).sort()).toEqual(['ciphertext', 'nonce']);
-        expect(await decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY, 'client')).toEqual({up: true});
-        await expect(decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY, 'server')).rejects.toThrow();
-        expect(typing).toMatchObject({op: 'send', channel: CHANNEL, event: 'typing', echo: false});
-        expect(await decryptEvent(CHANNEL, 'typing', typing.data, TEST_CHANNEL_KEY, 'client')).toBeNull();
+        expect(await decryptEvent(CHANNEL, 'client-vote', vote.data, TEST_CHANNEL_KEY, 'client')).toEqual({up: true});
+        await expect(decryptEvent(CHANNEL, 'client-vote', vote.data, TEST_CHANNEL_KEY, 'server')).rejects.toThrow();
+        await expect(decryptEvent(CHANNEL, 'vote', vote.data, TEST_CHANNEL_KEY, 'client')).rejects.toThrow();
+        expect(typing).toMatchObject({op: 'send', channel: CHANNEL, event: 'client-typing', echo: false});
+        expect(await decryptEvent(CHANNEL, 'client-typing', typing.data, TEST_CHANNEL_KEY, 'client')).toBeNull();
+        await expect(channel.send('')).rejects.toThrow(/name/);
     });
 
     it('Should reject a send that went nowhere because the connection is offline', async () => {

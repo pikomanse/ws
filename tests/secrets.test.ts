@@ -10,7 +10,7 @@ const SEED = Buffer.alloc(32, 7);
 const KEY_ID = 'k_3f9a1c0e5b7d2468';
 const SECRET = `sk_${KEY_ID}.${SEED.toString('base64url')}`;
 const MASTER = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
-const TEST_CHANNEL_KEY = 'BXZ3eZVE7qg3gVuvKUOimdghY3hQ1Gm0h9uULbkIQb0=';
+const TEST_CHANNEL_KEY = 'tYiq/FY0unmbT9GVQeR6NNCdJhPvlbl6+70+E0B0cS0=';
 
 const g = globalThis as any;
 const realFetch = g.fetch;
@@ -45,7 +45,7 @@ function expectNoSecret(dump: string, extra: string[] = []) {
 }
 
 describe('Secrets stay out of sight', () => {
-    it('Rest: not in JSON.stringify or util.inspect, also with a cached token', async () => {
+    it('Rest: not in JSON.stringify or util.inspect, also after a signed request', async () => {
         let authorization = '';
         g.fetch = async (_url: string, init: any) => {
             authorization = init.headers.Authorization;
@@ -76,7 +76,7 @@ describe('Secrets stay out of sight', () => {
     it('MasterKeyAuthenticator: not the master key, as base64 or bytes', async () => {
         for (const master of [MASTER, new Uint8Array(Buffer.from(MASTER, 'base64'))]) {
             const auth = new MasterKeyAuthenticator(OfflineAuthenticator.fromSecret(SECRET), master);
-            const answer = await auth.authenticate('c_1', 'private-encrypted-test', {});
+            const answer = await auth.authenticate('c_1', 'private-encrypted-test', {app: 'app-test'});
             expect(answer).toMatchObject({channel_key: TEST_CHANNEL_KEY});
             for (const dump of [JSON.stringify(auth), inspect(auth, {showHidden: true, depth: Infinity}), JSON.stringify({...auth}), inspect({...auth}, {showHidden: true, depth: Infinity})]) {
                 expectNoSecret(dump);
@@ -91,7 +91,7 @@ describe('Secrets stay out of sight', () => {
         expect(key.extractable).toBe(false);
         expect(key.algorithm.name).toBe('HMAC');
         expect(key.usages).toEqual(['sign']);
-        expect(await channelKey(key, 'private-encrypted-test')).toBe(TEST_CHANNEL_KEY);
+        expect(await channelKey(key, 'app-test', 'private-encrypted-test')).toBe(TEST_CHANNEL_KEY);
         await expect(importMasterKey(Buffer.alloc(31).toString('base64'))).rejects.toThrow(/32 bytes/);
         // Bytes the caller passed are left as they were.
         const bytes = new Uint8Array(Buffer.from(MASTER, 'base64'));
