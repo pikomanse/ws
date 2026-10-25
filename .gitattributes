@@ -1,0 +1,2 @@
+# Every text file has LF line endings, also in a checkout on Windows (guidelines/git.md).
+* text=auto eol=lf
