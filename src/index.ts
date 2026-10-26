@@ -12,6 +12,8 @@ import {
     ErrorCode,
     ClientErrorCode,
     JoinAuthorization,
+    Member,
+    MessageInfo,
 } from './types';
 import {OfflineAuthenticator, HttpAuthenticator, MasterKeyAuthenticator} from './authenticators';
 import {
@@ -40,7 +42,7 @@ import {
     MasterKey,
     Direction,
 } from './encryption';
-import {Rest, RestOptions, publish, DEFAULT_API_ADDRESS} from './rest';
+import {Rest, RestOptions, PublishOptions, ChannelsOptions, ChannelList, publish, DEFAULT_API_ADDRESS} from './rest';
 
 export {
     Channel,
@@ -81,5 +83,5 @@ export {
     Pikoman
 };
 export type SendData = SendDataType;
-export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, SignedRequest, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions};
+export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, SignedRequest, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions, PublishOptions, ChannelsOptions, ChannelList, Member, MessageInfo};
 export default Pikoman;

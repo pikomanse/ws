@@ -179,6 +179,45 @@ describe('Private and presence channels', () => {
     expect(fromMembers.args).toEqual([['c_eve', {id: 666}], ['c_ola', {id: 2}]]);
   });
 
+  it('Should send to one member, by connection or by user, and never to nobody', () => {
+    const {pikoman, socket} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    socket.sent.length = 0;
+    channel.sendTo('c_ola', 'answer', {n: 1});
+    channel.sendTo({userId: '42'}, 'client-answer');
+    expect(socket.sent).toEqual([
+      {op: 'send', channel: 'presence-room', event: 'client-answer', data: {n: 1}, echo: false, to: 'c_ola'},
+      {op: 'send', channel: 'presence-room', event: 'client-answer', data: null, echo: false, to_user: '42'},
+    ]);
+    expect(() => channel.sendTo('', 'answer')).toThrow('sendTo needs');
+    expect(() => channel.sendTo({userId: ''}, 'answer')).toThrow('sendTo needs');
+    expect(() => channel.sendTo({}, 'answer')).toThrow('sendTo needs');
+    expect(socket.sent.length).toBe(2);
+  });
+
+  it('Should tell a handler what the server says about a direct message and its sender', () => {
+    const {pikoman, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    const asked = sinon.spy();
+    const pushed = sinon.spy();
+    const every = sinon.spy();
+    channel.onClient('ask', asked);
+    channel.on('missed', pushed);
+    channel.clientMessage(every);
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_anna', user_id: '7', event: 'client-ask', data: 1, direct: true});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_bot', bot: 'k_1', event: 'client-ask', data: 2});
+    receive({op: 'client_event', channel: 'presence-room', from: 'c_ola', event: 'client-ask', data: 3});
+    receive({op: 'event', channel: 'presence-room', event: 'missed', data: [1], direct: true});
+    receive({op: 'event', channel: 'presence-room', event: 'missed', data: [2]});
+    expect(asked.args).toEqual([
+      ['c_anna', 1, {direct: true, userId: '7'}],
+      ['c_bot', 2, {direct: false, bot: 'k_1'}],
+      ['c_ola', 3],
+    ]);
+    expect(every.args[0]).toEqual(['c_anna', 'client-ask', 1, {direct: true, userId: '7'}]);
+    expect(pushed.args).toEqual([[[1], {direct: true}], [[2]]]);
+  });
+
   it('Should catch every event with AllEvents', () => {
     const {pikoman, receive} = connect();
     const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);

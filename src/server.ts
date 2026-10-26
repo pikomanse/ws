@@ -4,7 +4,7 @@
  * Web Crypto and fetch only, so it runs in Node 20+, Deno, Bun and workers.
  */
 export {Rest, publish, DEFAULT_API_ADDRESS} from './rest';
-export type {RestOptions} from './rest';
+export type {RestOptions, PublishOptions, ChannelsOptions, ChannelList} from './rest';
 export {
     parseSecret,
     importSecret,

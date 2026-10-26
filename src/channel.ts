@@ -1,5 +1,5 @@
 import Pikoman from "./pikoman";
-import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, MessageType } from "./types";
+import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, Member, MessageInfo, MessageType } from "./types";
 import { decryptEvent, encryptEvent, eventJson, importChannelKey } from "./encryption";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
@@ -15,6 +15,34 @@ function outgoingName(event: string): string {
 	return clientEventName(event);
 }
 
+/** The `to` or `to_user` of a send to one member. Throws for anything else. */
+function target(member: Member): { to: string } | { to_user: string } {
+	if (typeof member === "string" && member !== "") return { to: member };
+	if (member && typeof member === "object" && typeof member.userId === "string" && member.userId !== "") {
+		return { to_user: member.userId };
+	}
+	throw new Error("Pikoman: sendTo needs a connection id or { userId }");
+}
+
+/**
+ * What the server says about a message beside its data (`MessageInfo`), or nothing when it says
+ * nothing more, so handlers get the same arguments as before for an ordinary message.
+ */
+function infoOf(message: { direct?: boolean, user_id?: string, bot?: string }): MessageInfo | undefined {
+	if (message.direct !== true && message.user_id === undefined && message.bot === undefined) {
+		return undefined;
+	}
+	const info: MessageInfo = { direct: message.direct === true };
+	if (message.user_id !== undefined) info.userId = message.user_id;
+	if (message.bot !== undefined) info.bot = message.bot;
+	return info;
+}
+
+/** The arguments with `info` last, when there is one. */
+function withInfo(args: any[], info: MessageInfo | undefined): any[] {
+	return info === undefined ? args : [...args, info];
+}
+
 /** Calls `on(event, fn)` listeners with the event's data (and the sender, for client events). */
 export class EventsHandler {
 	private topics: Topics;
@@ -27,13 +55,13 @@ export class EventsHandler {
 		this.topics.setContext(context);
 	}
 
-	dispatchClient(event: string, from: string, data: any) {
-		this.topics.dispatch(event, from, data);
+	dispatchClient(event: string, from: string, data: any, info?: MessageInfo) {
+		this.topics.dispatch(event, ...withInfo([from, data], info));
 		return this;
 	}
 
-	dispatch(event: string, data: any) {
-		this.topics.dispatch(event, data);
+	dispatch(event: string, data: any, info?: MessageInfo) {
+		this.topics.dispatch(event, ...withInfo([data], info));
 		return this;
 	}
 
@@ -140,8 +168,9 @@ export class Channel {
 	}
 
 	/**
-	 * Events by name: `fn(data)` for what a backend published. Members' client events are named
-	 * `client-…` (see `PrivateChannel.onClient`), so they never reach a handler for a published event.
+	 * Events by name: `fn(data)` for what a backend published, and `fn(data, info)` with
+	 * `info.direct` true when it was pushed to this member alone. Members' client events are named `client-…` (see
+	 * `PrivateChannel.onClient`), so they never reach a handler for a published event.
 	 */
 	on(event: string, fn: Fn) {
 		this.messages.on(event, fn);
@@ -156,10 +185,11 @@ export class Channel {
 	handle(message: ChannelMessage) {
 		switch (message.op) {
 			case "event": {
+				const info = infoOf(message);
 				if (message.event !== undefined) {
-					this.messages.dispatch(message.event, message.data);
+					this.messages.dispatch(message.event, message.data, info);
 				}
-				this.opcodes.dispatch(MessageType.ServerMessage, [message.data, message.event]);
+				this.opcodes.dispatch(MessageType.ServerMessage, withInfo([message.data, message.event], info));
 				break;
 			}
 			case "joined": {
@@ -254,14 +284,20 @@ export class PrivateChannel extends Channel {
 		this.opcodes.dispatch(MessageType.Refused, [code]);
 	}
 
-	/** Every client event from other connections: `fn(clientId, event, data)`, `event` named `client-…`. */
+	/**
+	 * Every client event from other connections: `fn(clientId, event, data, info)`, `event` named
+	 * `client-…`; `info` as in `onClient`.
+	 */
 	clientMessage(fn: Fn) {
 		this.opcodes.on(MessageType.ClientMessage, fn);
 	}
 
 	/**
 	 * One client event from other connections, by name with or without `client-` (`"typing"` and
-	 * `"client-typing"` are the same): `fn(clientId, data)`. The same as `on("client-typing", fn)`.
+	 * `"client-typing"` are the same): `fn(clientId, data, info)`. The same as
+	 * `on("client-typing", fn)`. `info` comes only when the server says more: `info.direct` is true when it was sent to this member alone
+	 * (`sendTo`), `info.userId` is the sender's user id from its signed member data and `info.bot`
+	 * the API key a bot joined with; the server sets them, never the sender.
 	 */
 	onClient(event: string, fn: Fn) {
 		return this.on(clientEventName(event), fn);
@@ -276,8 +312,9 @@ export class PrivateChannel extends Channel {
 			// Under its client- name, also when the sender left it out (an older client), so a
 			// member can never reach a handler for a published event.
 			const event = clientEventName(message.event ?? "");
-			this.messages.dispatchClient(event, message.from, message.data);
-			this.opcodes.dispatch(MessageType.ClientMessage, [message.from, event, message.data]);
+			const info = infoOf(message);
+			this.messages.dispatchClient(event, message.from, message.data, info);
+			this.opcodes.dispatch(MessageType.ClientMessage, withInfo([message.from, event, message.data], info));
 			return;
 		}
 		super.handle(message);
@@ -298,6 +335,28 @@ export class PrivateChannel extends Channel {
 			event: name,
 			data: data === undefined ? null : data,
 			echo: toAll,
+		});
+	}
+
+	/**
+	 * Sends a client event to one member of the channel only: `sendTo("c_…", "answer", data)` to a
+	 * connection (its id, as in the member list or a client event's sender), or
+	 * `sendTo({ userId: "42" }, …)` to every connection of that user (the `user_id` in their signed
+	 * member data; presence channels). Nobody else gets it, and it gets `info.direct`. A member
+	 * that is not in the channel is refused with `refused("no_such_member")`. Needs write access,
+	 * as `send`, and counts against the same 10 a second.
+	 */
+	sendTo(member: Member, event: string, data?: any) {
+		const to = target(member);
+		const name = outgoingName(event);
+		eventJson(data);
+		this.pikoman.send({
+			op: "send",
+			channel: this.name,
+			event: name,
+			data: data === undefined ? null : data,
+			echo: false,
+			...to,
 		});
 	}
 }
@@ -494,6 +553,21 @@ export class EncryptedChannel extends PrivateChannel {
 	 * the data has no JSON form.
 	 */
 	send(event: string, data?: any, toAll = false): Promise<void> {
+		return this.sendEncrypted(event, data, toAll);
+	}
+
+	/** Encrypts and sends a client event to one member, as `PrivateChannel.sendTo`. */
+	sendTo(member: Member, event: string, data?: any): Promise<void> {
+		let to: { to: string } | { to_user: string };
+		try {
+			to = target(member);
+		} catch (e) {
+			return Promise.reject(e);
+		}
+		return this.sendEncrypted(event, data, false, to);
+	}
+
+	private sendEncrypted(event: string, data: any, toAll: boolean, to?: { to: string } | { to_user: string }): Promise<void> {
 		const sent = this.outgoing.then(async () => {
 			// The name as sent is the name the receivers decrypt with.
 			const name = outgoingName(event);
@@ -506,6 +580,7 @@ export class EncryptedChannel extends PrivateChannel {
 				event: name,
 				data: await encryptEvent(this.name, name, data, await this.key, "client"),
 				echo: toAll,
+				...(to ?? {}),
 			});
 			if (!handed) {
 				throw new Error(`Not connected: nothing was sent to ${this.name}`);

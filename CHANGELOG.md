@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.0-rc.8 (not published yet)
+
+Added, nothing breaks (for the server of 2026-10-26 and later):
+
+- **`sendTo(member, event, data)`** on private, presence and encrypted channels: a client event to
+  one member only, by connection id or `{ userId }` (the `user_id` in signed member data). A member
+  not in the channel is refused with `refused("no_such_member")` (new `ErrorCode`).
+- **What the server says about a message**: handlers get a last argument `info` (`MessageInfo`:
+  `direct`, `userId`, `bot`) when there is something to say: a message to this member alone, or a
+  client event whose sender has a user id or is a bot. Ordinary messages are handed over with the
+  same arguments as before.
+- **`Rest.publish(channel, event, data, { to | toUser })`** pushes to one member
+  (`?to=` / `?to_user=`), and `publish` now resolves with how many connections it reached.
+- **`Rest.channels({ prefix, info, limit, after })`** (`GET /channels`) and **`Rest.stats(channel)`**,
+  with `message_count`.
+
 ## 1.0.0-rc.7 (not published yet)
 
 Breaking, for apps on rc.6 or earlier:

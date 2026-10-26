@@ -231,6 +231,34 @@ describe('Rest', () => {
         expect(decode(calls[1].init.headers.Authorization.split('.')[1])).toMatchObject({htu: '/orders/again', bh: sha256('null')});
     });
 
+    it('Should publish to one member, and read the channel list and stats', async () => {
+        const calls: any[] = [];
+        let answer: any = {clients: 1};
+        (globalThis as any).fetch = async (url: string, init: any) => {
+            calls.push({url, init});
+            return {ok: true, status: 200, json: async () => answer};
+        };
+        const rest = new Rest({app: 'app-test', apiKey: SECRET, address: 'https://api.example'});
+        expect(await rest.publish('presence-room', 'missed', [1], {toUser: 'user 7'})).toBe(1);
+        expect(calls[0].url).toBe('https://api.example/presence-room/missed?to_user=user%207');
+        expect(decode(calls[0].init.headers.Authorization.split('.')[1]).htu).toBe('/presence-room/missed?to_user=user%207');
+        await rest.publish('presence-room', 'missed', [1], {to: 'c_1'});
+        expect(calls[1].url).toBe('https://api.example/presence-room/missed?to=c_1');
+        await expect(rest.publish('room', 'e', 1, {to: 'c_1', toUser: '7'})).rejects.toThrow('not both');
+        await expect(rest.publish('room', 'e', 1, {to: ''})).rejects.toThrow('1-128');
+
+        answer = {channels: {'chat-1': {message_count: 4}}, next: 'chat-1'};
+        const list = await rest.channels({prefix: 'chat-', info: ['message_count', 'user_count'], limit: 1});
+        expect(list.next).toBe('chat-1');
+        expect(calls[2].url).toBe('https://api.example/channels?prefix=chat-&info=message_count%2Cuser_count&limit=1');
+        expect(calls[2].init.method).toBe('GET');
+        const claims = decode(calls[2].init.headers.Authorization.split('.')[1]);
+        expect(claims).toMatchObject({htm: 'GET', htu: '/channels?prefix=chat-&info=message_count%2Cuser_count&limit=1', bh: sha256('')});
+        answer = {clients: 3, message_count: 9};
+        expect(await rest.stats('chat-1')).toEqual({clients: 3, message_count: 9});
+        expect(calls[3].url).toBe('https://api.example/chat-1/stats');
+    });
+
     it('Should never reuse a token, and not try again after a 401', async () => {
         // The clock moves a second per request, as the same request a second later must get a new token.
         const clock = jest.spyOn(Date, 'now');

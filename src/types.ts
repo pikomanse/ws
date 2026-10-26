@@ -70,7 +70,26 @@ export interface Authenticator {
  * by default). `invalid_event_name`: a client event not named `client-…`.
  */
 export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited' | 'not_encrypted'
-    | 'channel_full' | 'member_data_too_large' | 'key_revoked' | 'data_too_large' | 'invalid_event_name';
+    | 'channel_full' | 'member_data_too_large' | 'key_revoked' | 'data_too_large' | 'invalid_event_name'
+    | 'no_such_member';
+
+/**
+ * One member of a channel, for `sendTo`: its connection id (`"c_…"`, as in the member list), or
+ * `{ userId }` for every connection whose signed member data has that `user_id`.
+ */
+export type Member = string | { userId: string };
+
+/**
+ * What the server says about a message, beside its data: `direct` when it was sent to this
+ * member alone (`sendTo`, or a backend's push with `to`), and for client events the sender's
+ * `userId` (from its signed member data) and `bot` (the API key it joined with), never taken
+ * from the sender's message.
+ */
+export interface MessageInfo {
+    direct: boolean;
+    userId?: string;
+    bot?: string;
+}
 
 /**
  * Codes `refused` also reports from the client itself, in encrypted channels: a message that did
@@ -82,7 +101,7 @@ export type ClientErrorCode = 'decrypt_failed' | 'no_channel_key' | 'rejoin_fail
 export type ClientMessage =
     | { op: 'join', channel: string, token?: string }
     | { op: 'leave', channel: string }
-    | { op: 'send', channel: string, event: string, data: any, echo: boolean }
+    | { op: 'send', channel: string, event: string, data: any, echo: boolean, to?: string, to_user?: string }
     | { op: 'ping' };
 
 /** Messages the server sends. */
@@ -93,8 +112,8 @@ export type ServerMessage =
     | { op: 'members', channel: string, members: Record<string, any>, bots?: Record<string, string> }
     | { op: 'member_joined', channel: string, count: number, id: string, data: any, bot?: string }
     | { op: 'member_left', channel: string, count: number, id: string }
-    | { op: 'event', channel: string, event?: string, data: any }
-    | { op: 'client_event', channel: string, from: string, event: string, data: any }
+    | { op: 'event', channel: string, event?: string, data: any, direct?: boolean }
+    | { op: 'client_event', channel: string, from: string, event: string, data: any, user_id?: string, bot?: string, direct?: boolean }
     | { op: 'error', code: ErrorCode, channel?: string }
     | { op: 'pong' };
 

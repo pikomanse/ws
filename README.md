@@ -160,6 +160,40 @@ room.onClient("status", (from, data) => {
 Over HTTP, `GET /{channel}/clients` answers `{"clients": {id: data}, "bots": {id: key id}}`, with
 `bots` left out when there are none.
 
+### To one member
+
+`sendTo` sends a client event to one member of the channel and nobody else: a connection (its id,
+as in the member list or a client event's `from`), or every connection of a user (the `user_id` in
+their signed member data). A bot answers whoever asked; a backend can push the same way:
+
+```js
+room.onClient("history", (from, data, info) => {
+  // info.userId: the user id in the sender's signed member data; info.bot: a bot's API key.
+  room.sendTo(from, "history", lastMessages());          // that connection only
+  if (info?.userId) room.sendTo({ userId: info.userId }, "history", lastMessages());  // every tab
+});
+room.on("missed", (data, info) => info?.direct);         // a push to this member alone
+
+await rest.publish("presence-room", "missed", items, { toUser: "42" });  // POST …?to_user=42
+await rest.publish("presence-room", "missed", items, { to: "c_…" });     // POST …?to=c_…
+```
+
+Only members of the channel can be reached; anyone else is refused with `refused("no_such_member")`
+(over HTTP the answer is `{"clients": 0}`). Handlers get a last argument `info` only when the
+server says more than before: `direct`, `userId`, `bot`. The server sets these; a sender cannot.
+
+### The channel list and message counts
+
+```js
+const { channels, next, app_message_count } =
+  await rest.channels({ prefix: "chat-", info: ["user_count", "message_count"], limit: 100 });
+await rest.stats("chat-1");   // { clients, message_count }
+```
+
+`GET /channels` needs the `stats` right and lists only channels the key may see. `message_count` is
+the messages sent in a channel (pushes and client events) since it became occupied: it starts at
+0 when its first member joins and goes when the last one leaves.
+
 ## Refusals, and when access is taken away
 
 Everything the server or the library refuses for a channel reaches `channel.refused(fn)` as a code.
