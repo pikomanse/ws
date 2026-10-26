@@ -1,11 +1,12 @@
 import Pikoman from "./pikoman";
-import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, Member, MessageInfo, MessageType } from "./types";
+import { Authenticator, ChannelMessage, ClientErrorCode, Fn, JoinAuthorization, KickInfo, KickOptions, Member, MessageInfo, MessageType } from "./types";
 import { decryptEvent, encryptEvent, eventJson, importChannelKey } from "./encryption";
 import { OpCodeHandler } from "./opcode_handler";
 import { HttpAuthenticator } from "./authenticators";
 import { clientEventName } from "./client_events";
 import { throwLater } from "./callbacks";
 import Topics from "./topics";
+import { kickFields } from "./kick";
 
 /** The name a client event is sent under: `client-` in front, unless it has it. Throws for no name. */
 function outgoingName(event: string): string {
@@ -16,12 +17,12 @@ function outgoingName(event: string): string {
 }
 
 /** The `to` or `to_user` of a send to one member. Throws for anything else. */
-function target(member: Member): { to: string } | { to_user: string } {
+function target(member: Member, what = "sendTo"): { to: string } | { to_user: string } {
 	if (typeof member === "string" && member !== "") return { to: member };
 	if (member && typeof member === "object" && typeof member.userId === "string" && member.userId !== "") {
 		return { to_user: member.userId };
 	}
-	throw new Error("Pikoman: sendTo needs a connection id or { userId }");
+	throw new Error(`Pikoman: ${what} needs a connection id or { userId }`);
 }
 
 /**
@@ -117,6 +118,8 @@ export class Channel {
 	/** Joins tried since the server last took this channel away with `key_revoked`. */
 	private revokedRetries = 0;
 	private revokedTimer: any = 0;
+	/** A moderator removed this connection from the channel; `left` follows. */
+	private kickedOut = false;
 	protected opcodes = new OpCodeHandler<MessageType>(this);
 	protected messages: EventsHandler | AllEvents = new EventsHandler(this);
 
@@ -146,6 +149,16 @@ export class Channel {
 			return;
 		}
 		this.pikoman.send({ op: "leave", channel: this.name });
+	}
+
+	/**
+	 * A moderator (a bot with the `kick` right, or the app's backend) removed this connection from
+	 * the channel: `fn({ reason, banSeconds })`. The connection and its other channels stay. The
+	 * client forgets the channel (it is not joined again on reconnect); listen to it again to
+	 * rejoin, which is refused with `refused("banned")` until a ban has run out.
+	 */
+	kicked(fn: Fn) {
+		this.opcodes.on(MessageType.Kicked, fn);
 	}
 
 	/** Every event published to the channel over HTTP: `fn(data, event)`. */
@@ -199,6 +212,17 @@ export class Channel {
 			}
 			case "left": {
 				this.opcodes.dispatch(MessageType.Unsubscribe, [MessageType.Unsubscribe]);
+				// Kicked out: not joined again on reconnect.
+				if (this.kickedOut) this.pikoman.forgetChannel(this);
+				break;
+			}
+			case "kicked": {
+				// `left` follows.
+				this.kickedOut = true;
+				const info: KickInfo = {};
+				if (message.reason !== undefined) info.reason = message.reason;
+				if (message.ban_seconds !== undefined) info.banSeconds = message.ban_seconds;
+				this.opcodes.dispatch(MessageType.Kicked, [info]);
 				break;
 			}
 			default: {
@@ -359,6 +383,21 @@ export class PrivateChannel extends Channel {
 			...to,
 		});
 	}
+
+	/**
+	 * Removes a member from this channel, for a bot that joined it with an API key that has the
+	 * `kick` right for the channel (`ban` with `banSeconds`): `kick("c_…")` one connection, or
+	 * `kick({ userId: "42" })` every connection of that user (presence channels). The member gets
+	 * `kicked({ reason, banSeconds })` and leaves this channel only; with `banSeconds` (at most
+	 * 86 400) it may not join again until then. A user's connection, a key without the right, the
+	 * bot itself or another bot: `refused("not_allowed")`; nobody there:
+	 * `refused("no_such_member")`. Counts against the 10 client events a second.
+	 */
+	kick(member: Member, options: KickOptions = {}) {
+		const to = target(member, "kick");
+		const fields = kickFields(options);
+		this.pikoman.send({ op: "kick", channel: this.name, ...to, ...fields });
+	}
 }
 
 /**
@@ -467,6 +506,13 @@ export class PresenceChannel extends PrivateChannel {
 					message.id,
 				]);
 				this.opcodes.dispatch(MessageType.ClientsInChannel, [this.getMembers()]);
+				break;
+			}
+			case "kicked": {
+				// Out of the channel: nobody is listed any more.
+				this.membersMap = new Map();
+				this.botsMap = new Map();
+				super.handle(message);
 				break;
 			}
 			case "members": {

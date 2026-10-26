@@ -125,6 +125,16 @@ export default class Pikoman {
 		return `${this.options.ws_address}/${this.appId}`;
 	}
 
+	/**
+	 * Forgets a channel the server took away for good (a kick), without sending `leave`: it is not
+	 * joined again on reconnect. Only that channel object, not one that replaced it.
+	 */
+	forgetChannel(channel: Channel) {
+		if (this.channels.get(channel.getName()) === channel) {
+			this.channels.delete(channel.getName());
+		}
+	}
+
 	/** Whether this channel object is still one the app has joined (not left or replaced). */
 	hasChannel(channel: Channel): boolean {
 		let found = false;

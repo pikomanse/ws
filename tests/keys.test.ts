@@ -231,6 +231,30 @@ describe('Rest', () => {
         expect(decode(calls[1].init.headers.Authorization.split('.')[1])).toMatchObject({htu: '/orders/again', bh: sha256('null')});
     });
 
+    it('Should kick a member from one channel with a request signed for it', async () => {
+        const calls: any[] = [];
+        (globalThis as any).fetch = async (url: string, init: any) => {
+            calls.push({url, init});
+            return {ok: true, status: 200, json: async () => ({kicked: 1, banned: true})};
+        };
+        const rest = new Rest({app: 'app-test', apiKey: SECRET, address: 'https://api.example'});
+        expect(await rest.kick('presence-chat-1', {userId: '42'}, {reason: 'be nice', banSeconds: 600}))
+            .toEqual({kicked: 1, banned: true});
+        await rest.kick('presence-chat-1', 'c_1');
+        expect(calls[0].url).toBe('https://api.example/presence-chat-1/clients?to_user=42&reason=be+nice&ban_seconds=600');
+        expect(calls[0].init.method).toBe('DELETE');
+        const token = calls[0].init.headers.Authorization.slice('Bearer '.length);
+        expect(await verify(token)).toBe(true);
+        expect(decode(token.split('.')[1])).toMatchObject({
+            htm: 'DELETE', htu: '/presence-chat-1/clients?to_user=42&reason=be+nice&ban_seconds=600', bh: sha256(''),
+        });
+        expect(calls[1].url).toBe('https://api.example/presence-chat-1/clients?to=c_1');
+        await expect(rest.kick('presence-chat-1', '')).rejects.toThrow('kick needs');
+        await expect(rest.kick('presence-chat-1', 'c_1', {banSeconds: 86401})).rejects.toThrow('banSeconds');
+        await expect(rest.kick('presence-chat-1', 'c_1', {reason: 'x'.repeat(201)})).rejects.toThrow('reason');
+        expect(calls.length).toBe(2);
+    });
+
     it('Should publish to one member, and read the channel list and stats', async () => {
         const calls: any[] = [];
         let answer: any = {clients: 1};

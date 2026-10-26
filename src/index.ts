@@ -14,6 +14,8 @@ import {
     JoinAuthorization,
     Member,
     MessageInfo,
+    KickOptions,
+    KickInfo,
 } from './types';
 import {OfflineAuthenticator, HttpAuthenticator, MasterKeyAuthenticator} from './authenticators';
 import {
@@ -83,5 +85,5 @@ export {
     Pikoman
 };
 export type SendData = SendDataType;
-export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, SignedRequest, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions, PublishOptions, ChannelsOptions, ChannelList, Member, MessageInfo};
+export type {ClientMessage, ServerMessage, ErrorCode, ClientErrorCode, JoinAuthorization, KeyWithId, SignedRequest, EncryptedData, ChannelKey, MasterKey, Direction, RestOptions, PublishOptions, ChannelsOptions, ChannelList, Member, MessageInfo, KickOptions, KickInfo};
 export default Pikoman;

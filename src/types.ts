@@ -12,7 +12,9 @@ export enum MessageType {
     ClientsInChannel = 16,
     Refused = 32,
     Ping = 64,
-    Unknown = 128
+    Unknown = 128,
+    /** A moderator removed this connection from the channel (`kicked`). */
+    Kicked = 256
 }
 
 export enum ConnectionStatus {
@@ -71,7 +73,22 @@ export interface Authenticator {
  */
 export type ErrorCode = 'invalid_message' | 'join_refused' | 'too_many_channels' | 'not_allowed' | 'rate_limited' | 'not_encrypted'
     | 'channel_full' | 'member_data_too_large' | 'key_revoked' | 'data_too_large' | 'invalid_event_name'
-    | 'no_such_member';
+    | 'no_such_member' | 'banned';
+
+/** A kick by a bot or a backend: the short reason the member is told, and a ban in seconds (at most a day). */
+export interface KickOptions {
+    reason?: string;
+    banSeconds?: number;
+}
+
+/**
+ * What a member that was kicked out of a channel is told: the moderator's reason, if any, and
+ * how long it may not join the channel again, when it was banned.
+ */
+export interface KickInfo {
+    reason?: string;
+    banSeconds?: number;
+}
 
 /**
  * One member of a channel, for `sendTo`: its connection id (`"c_…"`, as in the member list), or
@@ -102,6 +119,7 @@ export type ClientMessage =
     | { op: 'join', channel: string, token?: string }
     | { op: 'leave', channel: string }
     | { op: 'send', channel: string, event: string, data: any, echo: boolean, to?: string, to_user?: string }
+    | { op: 'kick', channel: string, to?: string, to_user?: string, reason?: string, ban_seconds?: number }
     | { op: 'ping' };
 
 /** Messages the server sends. */
@@ -114,6 +132,7 @@ export type ServerMessage =
     | { op: 'member_left', channel: string, count: number, id: string }
     | { op: 'event', channel: string, event?: string, data: any, direct?: boolean }
     | { op: 'client_event', channel: string, from: string, event: string, data: any, user_id?: string, bot?: string, direct?: boolean }
+    | { op: 'kicked', channel: string, reason?: string, ban_seconds?: number }
     | { op: 'error', code: ErrorCode, channel?: string }
     | { op: 'pong' };
 

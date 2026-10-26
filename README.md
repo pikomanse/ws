@@ -182,6 +182,35 @@ Only members of the channel can be reached; anyone else is refused with `refused
 (over HTTP the answer is `{"clients": 0}`). Handlers get a last argument `info` only when the
 server says more than before: `direct`, `userId`, `bot`. The server sets these; a sender cannot.
 
+### Moderation: kick and ban
+
+A bot whose API key has the `kick` right for a channel removes a member from that channel only;
+with the `ban` right it can also keep the member out for a while (at most a day). The key's kinds,
+prefixes and exact names apply, so a moderator limited to `presence-chat-` can do nothing in
+`presence-admin`. A user's connection can never kick, and a bot can kick neither itself nor
+another bot. (`disconnect` is not this: it closes a whole connection, in every channel of the app.)
+
+```js
+room.onClient("message", (from, data, info) => {
+  if (isSpam(data)) room.kick(from, { reason: "No spam, please" });                // that connection
+  if (isAbuse(data)) room.kick({ userId: info.userId }, { reason: "Bye", banSeconds: 600 }); // every tab, 10 min
+});
+
+// The member that was removed:
+room.kicked(({ reason, banSeconds }) => showModal(`You were removed: ${reason ?? ""}`));
+room.refused((code) => code === "banned" && showModal("You may not join this room yet."));
+
+// From a backend (DELETE /{channel}/clients?to_user=42&reason=…&ban_seconds=600):
+await rest.kick("presence-chat-1", { userId: "42" }, { reason: "Bye", banSeconds: 600 });
+// → { kicked: 1, banned: true }
+```
+
+The member gets `kicked({ reason, banSeconds })` and leaves the channel; its connection and other
+channels stay, and the library does not join that channel again on reconnect (listen again to
+rejoin). The others see an ordinary leave, and a `member_removed` webhook says `"reason": "kicked"`
+and which key did it. A banned connection or user id is refused with `refused("banned")` until the
+ban runs out or the channel empties. A kick counts against the bot's 10 client events a second.
+
 ### The channel list and message counts
 
 ```js

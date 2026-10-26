@@ -8,6 +8,7 @@ import {encryptEvent, eventJson, isEncryptedChannel, channelKey, startMasterKeyI
 import {CLIENT_EVENT_PREFIX} from './client_events';
 import {INSPECT, refuseInBrowser} from './redact';
 import {checkedAddress} from './names';
+import {kickFields} from './kick';
 
 export const DEFAULT_API_ADDRESS = 'https://next-api.pikoman.se';
 
@@ -183,6 +184,43 @@ export class Rest {
         const search = query.toString();
         const url = `${this.address}/channels${search ? `?${search}` : ''}`;
         return this.getJson(url, 'channels');
+    }
+
+    /**
+     * Removes a member from one channel (scope `kick`; `ban` with `banSeconds`):
+     * `DELETE /{channel}/clients?to=…` for a connection id, or `?to_user=…` with `{ userId }` for
+     * every connection of that user. The member is told `kicked` with the reason, leaves this
+     * channel only and, with `banSeconds` (at most 86 400), may not join it again until then.
+     * Resolves with how many connections left, and with a ban whether it was recorded (a
+     * channel holds at most 100 bans).
+     */
+    async kick(channel: string, member: string | {userId: string}, options: {reason?: string, banSeconds?: number} = {}): Promise<{kicked: number, banned?: boolean}> {
+        const query = new URLSearchParams();
+        if (typeof member === 'string' && member !== '' && member.length <= 128) {
+            query.set('to', member);
+        } else if (member && typeof member === 'object' && typeof member.userId === 'string' && member.userId !== '' && member.userId.length <= 128) {
+            query.set('to_user', member.userId);
+        } else {
+            throw new Error('Pikoman: kick needs a connection id or { userId }, 1-128 characters');
+        }
+        const fields = kickFields(options);
+        if (fields.reason !== undefined) query.set('reason', fields.reason);
+        if (fields.ban_seconds !== undefined) query.set('ban_seconds', String(fields.ban_seconds));
+        const url = `${this.address}/${pathSegment('channel', channel)}/clients?${query.toString()}`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {'Authorization': await this.authorization({method: 'DELETE', url, body: ''})},
+        });
+        let json: any = null;
+        try {
+            json = await response.json();
+        } catch (e) {
+            // Not JSON: the status says enough.
+        }
+        if (!response.ok) {
+            throw new Error(`Pikoman: kick in ${channel} failed: ${response.status}${json?.error ? ` ${json.error}` : ''}`);
+        }
+        return json;
     }
 
     /** `GET /{channel}/stats` (scope `stats`): connections in it, and messages since it became occupied. */

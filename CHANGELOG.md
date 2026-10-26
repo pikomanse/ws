@@ -15,6 +15,12 @@ Added, nothing breaks (for the server of 2026-10-26 and later):
   (`?to=` / `?to_user=`), and `publish` now resolves with how many connections it reached.
 - **`Rest.channels({ prefix, info, limit, after })`** (`GET /channels`) and **`Rest.stats(channel)`**,
   with `message_count`.
+- **Moderation**: `kick(member, { reason, banSeconds })` on private and presence channels, for a bot
+  whose key has the `kick` right (`ban` with `banSeconds`) for the channel; `kicked(fn)` tells the
+  removed member `{ reason, banSeconds }`, and the channel is then forgotten (not joined again on
+  reconnect); `refused("banned")` for a join while banned (new `ErrorCode`).
+  **`Rest.kick(channel, member, { reason, banSeconds })`**: `DELETE /{channel}/clients`. Types
+  `KickOptions`, `KickInfo`. Needs the server of 2026-10-27 or later.
 
 ## 1.0.0-rc.7 (not published yet)
 

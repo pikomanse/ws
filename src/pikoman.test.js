@@ -195,6 +195,49 @@ describe('Private and presence channels', () => {
     expect(socket.sent.length).toBe(2);
   });
 
+  it('Should kick a member as a bot, and check what it sends', () => {
+    const {pikoman, socket} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    socket.sent.length = 0;
+    channel.kick('c_ola');
+    channel.kick({userId: '42'}, {reason: 'spam', banSeconds: 600});
+    expect(socket.sent).toEqual([
+      {op: 'kick', channel: 'presence-room', to: 'c_ola'},
+      {op: 'kick', channel: 'presence-room', to_user: '42', reason: 'spam', ban_seconds: 600},
+    ]);
+    expect(() => channel.kick('')).toThrow('kick needs');
+    expect(() => channel.kick('c_ola', {banSeconds: 1.5})).toThrow('banSeconds');
+    expect(() => channel.kick('c_ola', {banSeconds: 86401})).toThrow('banSeconds');
+    expect(() => channel.kick('c_ola', {reason: 'å'.repeat(101)})).toThrow('reason');
+    expect(socket.sent.length).toBe(2);
+  });
+
+  it('Should tell a kicked member why, and not join that channel again on reconnect', async () => {
+    const {pikoman, socket, receive} = connect();
+    const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    pikoman.listen('news');
+    receive({op: 'members', channel: 'presence-room', members: {c_me: {}, c_bo: {}}});
+    const kicked = sinon.spy();
+    const refused = sinon.spy();
+    channel.kicked(kicked);
+    channel.refused(refused);
+    receive({op: 'kicked', channel: 'presence-room', reason: 'spam', ban_seconds: 60});
+    receive({op: 'left', channel: 'presence-room'});
+    expect(kicked.args).toEqual([[{reason: 'spam', banSeconds: 60}]]);
+    expect(channel.getMembers().size).toBe(0);
+    expect(pikoman.hasChannel(channel)).toBe(false);
+    // A new connection joins news again, and not the room.
+    socket.sent.length = 0;
+    receive({op: 'connected', id: 'c_new'});
+    await flush();
+    expect(socket.sent).toEqual([{op: 'join', channel: 'news'}]);
+    // Listening again rejoins; a ban answers banned.
+    const again = pikoman.listenPresence('presence-room', tokenAuthenticator);
+    again.refused(refused);
+    receive({op: 'error', code: 'banned', channel: 'presence-room'});
+    expect(refused.args).toEqual([['banned']]);
+  });
+
   it('Should tell a handler what the server says about a direct message and its sender', () => {
     const {pikoman, receive} = connect();
     const channel = pikoman.listenPresence('presence-room', tokenAuthenticator);
