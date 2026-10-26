@@ -240,6 +240,33 @@ describe('Reconnecting', () => {
         expect(revoked).toHaveBeenCalledTimes(1);
     });
 
+    it('Should try again in minutes after 4402, call paused, and be back when the rights are', () => {
+        const pikoman = start();
+        const paused = jest.fn();
+        const revoked = jest.fn();
+        pikoman.paused(paused);
+        pikoman.revoked(revoked);
+        last().accept('c_1');
+        last().drop(4402);
+        expect(paused).toHaveBeenCalledTimes(1);
+        expect(revoked).not.toHaveBeenCalled();
+        // Not within the half minute an ordinary reconnect takes at most, and not before half the first minute.
+        jest.advanceTimersByTime(29999);
+        expect(FakeWebSocket.all).toHaveLength(1);
+        jest.advanceTimersByTime(30001);
+        expect(FakeWebSocket.all).toHaveLength(2);
+        // Still paused: the next wait is longer, between one and two minutes.
+        last().drop(4402);
+        jest.advanceTimersByTime(59999);
+        expect(FakeWebSocket.all).toHaveLength(2);
+        jest.advanceTimersByTime(60001);
+        expect(FakeWebSocket.all).toHaveLength(3);
+        // Back: connected as usual.
+        last().accept('c_2');
+        expect(pikoman.isConnected()).toBe(true);
+        expect(paused).toHaveBeenCalledTimes(2);
+    });
+
     it('Should not reconnect after 4401, and call disconnected, not revoked', () => {
         const pikoman = start();
         const disconnected = jest.fn();

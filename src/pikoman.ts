@@ -43,6 +43,13 @@ const RECONNECT_MAX_MS = 30000;
  * `connected` (1008, 4429), would get every client back within a second each time.
  */
 const STABLE_MS = 30000;
+/**
+ * After 4402 (the key's bot rights are paused until its owner takes Pro again) the next try waits
+ * between half and all of a ceiling that starts at a minute and doubles to five: nothing changes
+ * from one second to the next, and a bot is back within minutes of Pro.
+ */
+const PAUSED_FIRST_MS = 60000;
+const PAUSED_MAX_MS = 300000;
 /** Quiet for this long: ask the server for a pong. */
 const PING_AFTER_MS = 6500;
 /**
@@ -60,6 +67,8 @@ export default class Pikoman {
 	private timeoutStable: any = 0;
 	/** Attempts since the last connection that lasted STABLE_MS: how long the next wait may be. */
 	private attempts = 0;
+	/** 4402s in a row: how long the next wait for paused bot rights may be. */
+	private pausedAttempts = 0;
 	/**
 	 * Set by close(), by close code 4403 (the connection's API key was deleted) and by 4401 (the
 	 * app disconnected it): no reconnect.
@@ -233,6 +242,16 @@ export default class Pikoman {
 		this.timeoutReconnect = setTimeout(() => this.connect(), Math.floor(Math.random() * ceiling));
 	}
 
+	/** After 4402: waits between half and all of the current ceiling (see PAUSED_FIRST_MS). */
+	private schedulePausedRetry() {
+		if (this.closedForGood) return;
+		clearTimeout(this.timeoutReconnect);
+		const ceiling = Math.min(PAUSED_MAX_MS, PAUSED_FIRST_MS * 2 ** this.pausedAttempts);
+		this.pausedAttempts = Math.min(this.pausedAttempts + 1, 8);
+		const wait = ceiling / 2 + Math.floor(Math.random() * (ceiling / 2));
+		this.timeoutReconnect = setTimeout(() => this.connect(), wait);
+	}
+
 	private onMessage({ data }: { data: string }) {
 		let message: ServerMessage;
 		try {
@@ -279,6 +298,7 @@ export default class Pikoman {
 		clearTimeout(this.timeoutStable);
 		this.timeoutStable = setTimeout(() => {
 			this.attempts = 0;
+			this.pausedAttempts = 0;
 		}, STABLE_MS);
 		this.rejoin();
 		this.messages.dispatch(ConnectionStatus.Online, [true]);
@@ -306,9 +326,14 @@ export default class Pikoman {
 		const revoked = event?.code === 4403;
 		// 4401: the app disconnected this connection (a moderator). Coming back by itself would undo it.
 		const disconnected = event?.code === 4401;
+		// 4402: the key's bot rights are paused, not gone: try again, in minutes rather than seconds.
+		const paused = event?.code === 4402;
 		if (revoked || disconnected) {
 			this.closedForGood = true;
+		} else if (paused) {
+			this.schedulePausedRetry();
 		} else {
+			this.pausedAttempts = 0;
 			this.scheduleReconnect();
 		}
 		if (!wasOffline) {
@@ -319,6 +344,9 @@ export default class Pikoman {
 		}
 		if (disconnected) {
 			this.messages.dispatch(ConnectionStatus.Disconnected, [event]);
+		}
+		if (paused) {
+			this.messages.dispatch(ConnectionStatus.Paused, [event]);
 		}
 	}
 
@@ -388,6 +416,16 @@ export default class Pikoman {
 	 */
 	disconnected(fn: Fn) {
 		this.messages.on(ConnectionStatus.Disconnected, fn);
+	}
+
+	/**
+	 * The server closed this bot's connection with 4402: its API key's bot rights are paused,
+	 * because the app's owner is no longer on Pro. It keeps trying, every one to five minutes, and
+	 * joins its channels again once they are back; `fn(closeEvent)` is the place to log it.
+	 * `offline` is called first, as for any close.
+	 */
+	paused(fn: Fn) {
+		this.messages.on(ConnectionStatus.Paused, fn);
 	}
 
 	/** Whether channels join again by themselves after `key_revoked` (`Options.rejoin_on_revoke`). */

@@ -1,6 +1,16 @@
 # Changelog
 
-## 1.0.0-rc.9 (not published yet)
+## 1.0.0-rc.10 (not published yet)
+
+Added, nothing breaks:
+
+- **`paused(fn)`**: the server closed this bot's connection with **4402**, because its API key's
+  bot rights are paused (the app's owner is no longer on Pro). Unlike 4403 it is not for good:
+  the client tries again after one to two minutes, then less often, at most every five, and joins
+  its channels again once the rights are back. `offline` is called first. Before, such a key was
+  removed and the bot got 4403 and stayed offline even after Pro returned.
+
+## 1.0.0-rc.9 (published 2026-10-26)
 
 Added, nothing breaks:
 

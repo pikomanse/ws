@@ -24,7 +24,12 @@ export enum ConnectionStatus {
     /** Closed with 4403: the API key the connection signed in with was deleted. No reconnect. */
     Revoked = 8,
     /** Closed with 4401: the app disconnected this connection (`Rest.disconnect`). No reconnect. */
-    Disconnected = 16
+    Disconnected = 16,
+    /**
+     * Closed with 4402: the API key's bot rights are paused (its app's owner is off the Pro plan).
+     * The client keeps trying, once every one to five minutes, and is back when they are.
+     */
+    Paused = 32
 }
 
 export type Fn = (...data: any) => void;
