@@ -239,6 +239,20 @@ describe('Reconnecting', () => {
         expect(FakeWebSocket.all).toHaveLength(1);
         expect(revoked).toHaveBeenCalledTimes(1);
     });
+
+    it('Should not reconnect after 4401, and call disconnected, not revoked', () => {
+        const pikoman = start();
+        const disconnected = jest.fn();
+        const revoked = jest.fn();
+        pikoman.disconnected(disconnected);
+        pikoman.revoked(revoked);
+        last().accept('c_1');
+        last().drop(4401);
+        jest.advanceTimersByTime(120000);
+        expect(FakeWebSocket.all).toHaveLength(1);
+        expect(disconnected).toHaveBeenCalledTimes(1);
+        expect(revoked).not.toHaveBeenCalled();
+    });
 });
 
 describe('close()', () => {

@@ -1,6 +1,16 @@
 # Changelog
 
-## 1.0.0-rc.8 (not published yet)
+## 1.0.0-rc.9 (not published yet)
+
+Added, nothing breaks:
+
+- **`Rest.disconnect(connectionId)`** (`DELETE /connection/{id}`, the right `disconnect`): closes
+  one connection in every channel, for a backend or a bot that throws someone out of the app.
+- **`disconnected(fn)`**: the server closed this connection with **4401** (the app disconnected
+  it). It does not connect again by itself, as after 4403; `offline` is called first. With a server
+  from before 2026-10-27 a disconnect closes plainly, and the client comes back as before.
+
+## 1.0.0-rc.8 (published 2026-10-26)
 
 Added, nothing breaks (for the server of 2026-10-26 and later):
 

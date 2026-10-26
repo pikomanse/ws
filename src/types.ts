@@ -22,7 +22,9 @@ export enum ConnectionStatus {
     Loading = 2,
     Online = 4,
     /** Closed with 4403: the API key the connection signed in with was deleted. No reconnect. */
-    Revoked = 8
+    Revoked = 8,
+    /** Closed with 4401: the app disconnected this connection (`Rest.disconnect`). No reconnect. */
+    Disconnected = 16
 }
 
 export type Fn = (...data: any) => void;

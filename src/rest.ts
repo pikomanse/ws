@@ -223,6 +223,33 @@ export class Rest {
         return json;
     }
 
+    /**
+     * Closes one connection, in every channel (scope `disconnect`): `DELETE /connection/{id}`.
+     * The client is told with close code 4401 and does not connect again by itself
+     * (`disconnected`). App-wide: the key's channels do not limit it, so give it only to a key
+     * that should be able to throw anyone out. Resolves with whether the connection was found.
+     */
+    async disconnect(connectionId: string): Promise<boolean> {
+        if (typeof connectionId !== 'string' || connectionId === '' || connectionId.length > 128) {
+            throw new Error('Pikoman: disconnect needs a connection id, 1-128 characters');
+        }
+        const url = `${this.address}/connection/${encodeURIComponent(connectionId)}`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {'Authorization': await this.authorization({method: 'DELETE', url, body: ''})},
+        });
+        let json: any = null;
+        try {
+            json = await response.json();
+        } catch (e) {
+            // Not JSON: the status says enough.
+        }
+        if (!response.ok) {
+            throw new Error(`Pikoman: disconnect of ${connectionId} failed: ${response.status}${json?.error ? ` ${json.error}` : ''}`);
+        }
+        return json?.kicked === true;
+    }
+
     /** `GET /{channel}/stats` (scope `stats`): connections in it, and messages since it became occupied. */
     async stats(channel: string): Promise<{clients: number, message_count: number}> {
         const url = `${this.address}/${pathSegment('channel', channel)}/stats`;

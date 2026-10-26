@@ -60,7 +60,10 @@ export default class Pikoman {
 	private timeoutStable: any = 0;
 	/** Attempts since the last connection that lasted STABLE_MS: how long the next wait may be. */
 	private attempts = 0;
-	/** Set by close(), and by close code 4403 (the connection's API key was deleted): no reconnect. */
+	/**
+	 * Set by close(), by close code 4403 (the connection's API key was deleted) and by 4401 (the
+	 * app disconnected it): no reconnect.
+	 */
 	private closedForGood = false;
 	private status = ConnectionStatus.Loading;
 	private channels = new Map<string, Channel>();
@@ -287,8 +290,8 @@ export default class Pikoman {
 	}
 
 	/**
-	 * The socket closed, or went silent: let it go and connect again after a while (after 4403,
-	 * never), and only then tell the app, so a callback that throws cannot stop the reconnect. The
+	 * The socket closed, or went silent: let it go and connect again after a while (after 4403 or
+	 * 4401, never), and only then tell the app, so a callback that throws cannot stop the reconnect. The
 	 * app is told once per lost connection: not again for every attempt that fails after it, nor
 	 * for a socket that opened and closed before `connected`.
 	 */
@@ -301,7 +304,9 @@ export default class Pikoman {
 		// 4403: the API key this connection signed in with was deleted. Connecting again would only
 		// be refused again, so stay offline.
 		const revoked = event?.code === 4403;
-		if (revoked) {
+		// 4401: the app disconnected this connection (a moderator). Coming back by itself would undo it.
+		const disconnected = event?.code === 4401;
+		if (revoked || disconnected) {
 			this.closedForGood = true;
 		} else {
 			this.scheduleReconnect();
@@ -311,6 +316,9 @@ export default class Pikoman {
 		}
 		if (revoked) {
 			this.messages.dispatch(ConnectionStatus.Revoked, [event]);
+		}
+		if (disconnected) {
+			this.messages.dispatch(ConnectionStatus.Disconnected, [event]);
 		}
 	}
 
@@ -370,6 +378,16 @@ export default class Pikoman {
 	 */
 	revoked(fn: Fn) {
 		this.messages.on(ConnectionStatus.Revoked, fn);
+	}
+
+	/**
+	 * The app disconnected this connection (4401, `Rest.disconnect` with the right `disconnect`,
+	 * from its backend or a bot). It does not reconnect; `fn(closeEvent)` is the place to tell the
+	 * user. `offline` is called first, as for any close. Whether they may come back is the app's to
+	 * decide: its backend signs their next token, or does not.
+	 */
+	disconnected(fn: Fn) {
+		this.messages.on(ConnectionStatus.Disconnected, fn);
 	}
 
 	/** Whether channels join again by themselves after `key_revoked` (`Options.rejoin_on_revoke`). */
