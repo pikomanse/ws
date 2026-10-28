@@ -85,9 +85,9 @@ describe('Encrypted channels', () => {
     });
 
     it('Should read channel_key from the token endpoint', async () => {
-        const urls: string[] = [];
-        g.fetch = async (url: string) => {
-            urls.push(url);
+        const requests: string[] = [];
+        g.fetch = async (url: string, init: any) => {
+            requests.push(`${init.method} ${url} ${init.body}`);
             return {ok: true, json: async () => ({token: 'jwt', channel_key: TEST_CHANNEL_KEY})};
         };
         const {pikoman, socket, receive} = connect();
@@ -95,7 +95,7 @@ describe('Encrypted channels', () => {
         const on = jest.fn();
         channel.on('message', on);
         await until(() => socket.sent.length > 0);
-        expect(urls).toEqual([`https://app.example/auth/c_me-${CHANNEL}`]);
+        expect(requests).toEqual([`POST https://app.example/auth {"connection_id":"c_me","channel":"${CHANNEL}"}`]);
         expect(socket.sent).toEqual([{op: 'join', channel: CHANNEL, token: 'jwt'}]);
         receive({op: 'event', channel: CHANNEL, event: 'message', data: await encryptEvent(CHANNEL, 'message', {text: 'hej'}, TEST_CHANNEL_KEY)});
         await until(() => on.mock.calls.length > 0);

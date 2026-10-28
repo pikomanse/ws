@@ -2,25 +2,31 @@ import {Authenticator, JoinAuthorization, Options} from "../types";
 import {checkChannelName, checkConnectionId} from "../names";
 
 /**
- * Asks the app's backend for a join token: `GET {auth_url}/{clientId}-{channelName}`, which
- * answers `{"token": "..."}`. Both names are checked first against what the server takes, so a
- * channel name from a URL parameter cannot point the request at another path on the backend. For a `private-encrypted-` channel it also answers the channel key,
- * `{"token": "...", "channel_key": "<base64>"}`, and then this returns both.
+ * Asks the app's backend for a join token: `POST {auth_url}` with the JSON body
+ * `{"connection_id": "...", "channel": "..."}`, which answers `{"token": "..."}`, as pusher-js
+ * posts to its auth endpoint. Both names are checked first against what the server takes, so the
+ * backend never gets a name Pikoman would refuse. `auth_headers` are sent with it (a CSRF token, a
+ * bearer token), read again at every request. For a `private-encrypted-` channel it also answers
+ * the channel key, `{"token": "...", "channel_key": "<base64>"}`, and then this returns both.
  */
 export default class Http_authenticator implements Authenticator {
-    private getAuthUrl(clientId: string, channelName: string, options: Options): string {
+    async authenticate(clientId: string, channelName: string, options: Options): Promise<string | JoinAuthorization> {
         if (!channelName) {
             throw new Error(`Need channelName`);
         }
         if (!options.auth_url) {
             throw new Error(`Need auth_url`);
         }
-        return `${options.auth_url}/${checkConnectionId(clientId)}-${checkChannelName(channelName)}`;
-    }
-
-    async authenticate(clientId: string, channelName: string, options: Options): Promise<string | JoinAuthorization> {
-        const url = this.getAuthUrl(clientId, channelName, options);
-        const request = await fetch(url);
+        const body = JSON.stringify({
+            connection_id: checkConnectionId(clientId),
+            channel: checkChannelName(channelName),
+        });
+        const extra = typeof options.auth_headers === "function" ? await options.auth_headers() : options.auth_headers;
+        const request = await fetch(options.auth_url, {
+            method: "POST",
+            headers: {...extra, "Content-Type": "application/json", "Accept": "application/json"},
+            body,
+        });
         if (!request.ok) {
             throw new Error('Request was not successful');
         }

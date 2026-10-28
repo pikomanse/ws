@@ -1,6 +1,25 @@
 # Changelog
 
-## 1.0.0-rc.10 (not published yet)
+## 1.0.0-rc.11 (not published yet)
+
+**Breaks token endpoints**: `HttpAuthenticator` (what `auth_url` uses) now asks with
+`POST {auth_url}` and the JSON body `{"connection_id": "c_…", "channel": "…"}`, as pusher-js posts
+to its auth endpoint, instead of `GET {auth_url}/{connection id}-{channel}`. The answer is the same,
+`{"token": "…"}` (and `channel_key` for an encrypted channel). Change the route on your backend:
+
+```js
+// was: app.get("/pikoman/auth/:join", …) with req.params.join.split(/-(.*)/)
+app.post("/pikoman/auth", express.json(), async (req, res) => {
+  const { connection_id, channel } = req.body;
+  // … as before
+});
+```
+
+Added: **`auth_headers`**, headers sent with every token request (Laravel's `X-CSRF-TOKEN`, a
+bearer token), or a function called at each request. A POST route in Laravel's `web` group needs
+the CSRF token; the GET route did not.
+
+## 1.0.0-rc.10 (published 2026-10-27)
 
 Added, nothing breaks:
 

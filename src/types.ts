@@ -45,7 +45,13 @@ export interface MessageCallback<T extends number> {
 
 export interface Options {
     ws_address?: string;
+    /** Your backend's token endpoint: `POST` with `{"connection_id", "channel"}`, answers `{"token"}`. */
     auth_url?: string;
+    /**
+     * Headers sent with every token request, such as Laravel's `X-CSRF-TOKEN` or a bearer token.
+     * A function is called at each request, so a refreshed token is used.
+     */
+    auth_headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>);
     /** The app id. Pikoman sets it in the options it gives an authenticator; never set it yourself. */
     app?: string;
     /**

@@ -22,9 +22,10 @@ connect to `wss://ws.pikoman.se` when 2.0 moves there; nothing else changes.
 import Pikoman from "@pikoman/ws";
 
 const pikoman = new Pikoman("app-yourapp", {
-  // Your backend's endpoint that signs join tokens: GET {auth_url}/{clientId}-{channel}
+  // Your backend's endpoint that signs join tokens: POST {"connection_id", "channel"} as JSON,
   // answers {"token": "<JWT>"}. Only needed for presence- and private- channels.
   auth_url: "/pikoman/auth",
+  // auth_headers: { "X-CSRF-TOKEN": csrf },  // or a function, called at every request
 });
 
 // Public channel: anyone with the app id can listen.
@@ -132,9 +133,19 @@ page it is refused unless the page is served from localhost, or passes `{ allowI
 as the fifth argument: only for a page that tries things out with a key its visitor types in, never
 for a key you ship.
 
-`HttpAuthenticator` asks `{auth_url}/{connection id}-{channel}`, and refuses a channel name the
-server would not take (1-164 characters of `A-Z a-z 0-9 _ - = @ , . ;`), so a name taken from a URL
-cannot point the request at another path on your backend. App ids are checked the same way.
+`HttpAuthenticator` posts `{"connection_id": "c_…", "channel": "…"}` as JSON to `auth_url`, with
+`auth_headers` if you give them, and refuses a channel name the server would not take (1-164
+characters of `A-Z a-z 0-9 _ - = @ , . ;`) before it asks. App ids are checked the same way. A
+token endpoint in Express:
+
+```js
+app.post("/pikoman/auth", express.json(), async (req, res) => {
+  const { connection_id, channel } = req.body;
+  if (!mayJoin(req.user, channel)) return res.sendStatus(403);
+  const signer = new OfflineAuthenticator({ name: req.user.name }, process.env.PIKOMAN_PRIVATE_KEY, 3);
+  res.json({ token: await signer.authenticate(connection_id, channel) });
+});
+```
 
 `parseSecret(secret)` reads an `sk_` secret into `{ keyId, seed }` and throws on anything malformed.
 

@@ -28,18 +28,40 @@ describe('Names and addresses', () => {
         }
     });
 
-    it('Should never point the token request at another path', async () => {
-        const urls: string[] = [];
-        (globalThis as any).fetch = async (url: string) => {
-            urls.push(url);
+    it('Should post the names to the token endpoint, and never a name the server would refuse', async () => {
+        const requests: any[] = [];
+        (globalThis as any).fetch = async (url: string, init: any) => {
+            requests.push({url, method: init.method, headers: init.headers, body: JSON.parse(init.body)});
             return {ok: true, json: async () => ({token: 'jwt'})};
         };
         const auth = new HttpAuthenticator();
         await expect(auth.authenticate('c_1', 'private-x/../../../api/account/delete?', {auth_url: '/auth'})).rejects.toThrow(/not a channel name/);
         await expect(auth.authenticate('c_1/../admin', 'private-x', {auth_url: '/auth'})).rejects.toThrow(/not a connection id/);
-        expect(urls).toEqual([]);
+        expect(requests).toEqual([]);
         expect(await auth.authenticate('c_1', 'private-x', {auth_url: '/auth'})).toBe('jwt');
-        expect(urls).toEqual(['/auth/c_1-private-x']);
+        expect(requests).toEqual([{
+            url: '/auth',
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+            body: {connection_id: 'c_1', channel: 'private-x'},
+        }]);
+    });
+
+    it('Should send auth_headers, read again at every request', async () => {
+        const sent: any[] = [];
+        (globalThis as any).fetch = async (_url: string, init: any) => {
+            sent.push(init.headers);
+            return {ok: true, json: async () => ({token: 'jwt'})};
+        };
+        const auth = new HttpAuthenticator();
+        await auth.authenticate('c_1', 'private-x', {auth_url: '/auth', auth_headers: {'X-CSRF-TOKEN': 'abc'}});
+        let n = 0;
+        const headers = async () => ({Authorization: `Bearer t${++n}`});
+        await auth.authenticate('c_1', 'private-x', {auth_url: '/auth', auth_headers: headers});
+        await auth.authenticate('c_1', 'private-x', {auth_url: '/auth', auth_headers: headers});
+        // Our Content-Type wins over one in auth_headers.
+        await auth.authenticate('c_1', 'private-x', {auth_url: '/auth', auth_headers: {'Content-Type': 'text/plain'}});
+        expect(sent.map((h) => h['X-CSRF-TOKEN'] ?? h.Authorization ?? h['Content-Type'])).toEqual(['abc', 'Bearer t1', 'Bearer t2', 'application/json']);
     });
 
     it('Should keep keys off the network in the clear, but allow plain addresses on this machine', () => {
