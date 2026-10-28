@@ -4,7 +4,7 @@
 import {createHash, createPrivateKey, createPublicKey, webcrypto} from 'crypto';
 import {
     MasterKeyAuthenticator,
-    OfflineAuthenticator,
+    TokenSigner,
     importSecret,
     parseSecret,
     requestToken,
@@ -16,7 +16,7 @@ import {
     decryptEvent,
 } from '../src';
 import {installWebGlobals} from './web_globals';
-import {authChannelWithKey} from '../src/authenticators/offline_authenticator';
+import {authChannelWithKey} from '../src/authenticators/token_signer';
 
 // Test keys only: the seed of sevens, as in the server's tests. Never used for a real app.
 const SEED = Buffer.alloc(32, 7);
@@ -68,7 +68,7 @@ describe('API key secrets', () => {
             expect(() => parseSecret(secret)).toThrow(/Not a Pikoman API key secret/);
         }
         expect(() => parseSecret(undefined as any)).toThrow();
-        expect(() => OfflineAuthenticator.fromSecret('sk_nope')).toThrow();
+        expect(() => TokenSigner.fromSecret('sk_nope')).toThrow();
         expect(() => new Rest({app: 'app-test', apiKey: 'sk_nope'})).toThrow();
     });
 
@@ -170,13 +170,13 @@ describe('Request tokens', () => {
 
 describe('Join tokens with kid', () => {
     it('Should keep the old constructor and a header without kid', async () => {
-        const token = await new OfflineAuthenticator({name: 'Anna'}, PKCS8_BASE64, 3).authenticate('c_1', 'presence-room');
+        const token = await new TokenSigner({name: 'Anna'}, PKCS8_BASE64, 3).authenticate('c_1', 'presence-room');
         expect(decode(token.split('.')[0])).toEqual({alg: 'EdDSA', typ: 'JWT'});
         expect(await verify(token)).toBe(true);
     });
 
     it('Should put a signing key id in the header', async () => {
-        const token = await new OfflineAuthenticator(null, PKCS8_BASE64, 0, 's_0123456789abcdef').authenticate('c_1', 'private-a');
+        const token = await new TokenSigner(null, PKCS8_BASE64, 0, 's_0123456789abcdef').authenticate('c_1', 'private-a');
         expect(decode(token.split('.')[0])).toEqual({alg: 'EdDSA', typ: 'JWT', kid: 's_0123456789abcdef'});
         expect(await verify(token)).toBe(true);
     });
@@ -195,7 +195,7 @@ describe('Join tokens with kid', () => {
     });
 
     it('Should sign as a bot with an API key', async () => {
-        const token = await OfflineAuthenticator.fromSecret(SECRET, {bot: 'berries'}, 3).authenticate('c_bot', 'presence-garden');
+        const token = await TokenSigner.fromSecret(SECRET, {bot: 'berries'}, 3).authenticate('c_bot', 'presence-garden');
         const [header, payload] = token.split('.');
         expect(decode(header)).toEqual({alg: 'EdDSA', typ: 'JWT', kid: KEY_ID});
         expect(decode(payload)).toMatchObject({connection: 'c_bot', channel: 'presence-garden', access: 3, data: {bot: 'berries'}});
@@ -372,14 +372,14 @@ describe('Rest', () => {
         g.document = {};
         try {
             expect(() => new Rest({app: 'app-test', apiKey: SECRET})).toThrow(/never in a browser/);
-            expect(() => OfflineAuthenticator.fromSecret(SECRET)).toThrow(/never in a browser/);
+            expect(() => TokenSigner.fromSecret(SECRET)).toThrow(/never in a browser/);
             expect(() => new MasterKeyAuthenticator({authenticate: async () => 't'}, Buffer.alloc(32).toString('base64'))).toThrow(/never in a browser/);
             // A signing key puts the key in the page: refused, unless the page says it means it
             // (a playground where the visitor types in a key) or is served from localhost.
-            expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0)).toThrow(/allowInBrowser/);
-            expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0, undefined, {allowInBrowser: true})).not.toThrow();
+            expect(() => new TokenSigner(null, PKCS8_BASE64, 0)).toThrow(/allowInBrowser/);
+            expect(() => new TokenSigner(null, PKCS8_BASE64, 0, undefined, {allowInBrowser: true})).not.toThrow();
             g.location = {hostname: 'localhost'};
-            expect(() => new OfflineAuthenticator(null, PKCS8_BASE64, 0)).not.toThrow();
+            expect(() => new TokenSigner(null, PKCS8_BASE64, 0)).not.toThrow();
         } finally {
             delete g.window;
             delete g.document;

@@ -15,6 +15,10 @@ app.post("/pikoman/auth", express.json(), async (req, res) => {
 });
 ```
 
+**`OfflineAuthenticator` is now `TokenSigner`**, a name for what it does: it signs join tokens
+with a key, in a backend or a bot, and nothing about it is offline. `OfflineAuthenticator` stays as
+another name for the same class, so code written for rc.10 keeps working.
+
 Added: **`auth_headers`**, headers sent with every token request (Laravel's `X-CSRF-TOKEN`, a
 bearer token), or a function called at each request. A POST route in Laravel's `web` group needs
 the CSRF token; the GET route did not.

@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 import {inspect} from 'util';
-import {channelKey, importMasterKey, MasterKeyAuthenticator, OfflineAuthenticator, Rest} from '../src';
+import {channelKey, importMasterKey, MasterKeyAuthenticator, TokenSigner, Rest} from '../src';
 import {installWebGlobals} from './web_globals';
 
 // Test keys only.
@@ -64,8 +64,8 @@ describe('Secrets stay out of sight', () => {
         expect(Object.keys(rest).sort()).toEqual(['address', 'app']);
     });
 
-    it('OfflineAuthenticator.fromSecret: not the seed', async () => {
-        const auth = OfflineAuthenticator.fromSecret(SECRET, {name: 'Bot'}, 3);
+    it('TokenSigner.fromSecret: not the seed', async () => {
+        const auth = TokenSigner.fromSecret(SECRET, {name: 'Bot'}, 3);
         await auth.authenticate('c_1', 'private-a');
         for (const dump of [JSON.stringify(auth), inspect(auth, {showHidden: true, depth: Infinity}), JSON.stringify({...auth}), inspect({...auth}, {showHidden: true, depth: Infinity})]) {
             expectNoSecret(dump);
@@ -75,7 +75,7 @@ describe('Secrets stay out of sight', () => {
 
     it('MasterKeyAuthenticator: not the master key, as base64 or bytes', async () => {
         for (const master of [MASTER, new Uint8Array(Buffer.from(MASTER, 'base64'))]) {
-            const auth = new MasterKeyAuthenticator(OfflineAuthenticator.fromSecret(SECRET), master);
+            const auth = new MasterKeyAuthenticator(TokenSigner.fromSecret(SECRET), master);
             const answer = await auth.authenticate('c_1', 'private-encrypted-test', {app: 'app-test'});
             expect(answer).toMatchObject({channel_key: TEST_CHANNEL_KEY});
             for (const dump of [JSON.stringify(auth), inspect(auth, {showHidden: true, depth: Infinity}), JSON.stringify({...auth}), inspect({...auth}, {showHidden: true, depth: Infinity})]) {
@@ -83,7 +83,7 @@ describe('Secrets stay out of sight', () => {
             }
         }
         // A wrong length is still refused at once.
-        expect(() => new MasterKeyAuthenticator(OfflineAuthenticator.fromSecret(SECRET), Buffer.alloc(16).toString('base64'))).toThrow(/32 bytes/);
+        expect(() => new MasterKeyAuthenticator(TokenSigner.fromSecret(SECRET), Buffer.alloc(16).toString('base64'))).toThrow(/32 bytes/);
     });
 
     it('The master key imports as a non-extractable HMAC key that gives the same channel keys', async () => {

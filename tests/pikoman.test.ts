@@ -3,8 +3,8 @@
  */
 import {webcrypto} from 'crypto';
 import {TextEncoder} from 'util';
-import {OfflineAuthenticator} from '../src';
-import {importSigningKey, signToken} from '../src/authenticators/offline_authenticator';
+import {TokenSigner} from '../src';
+import {importSigningKey, signToken} from '../src/authenticators/token_signer';
 
 // A test key only (the same seed as the server's tests), never used for a real app.
 const TEST_PEM = `-----BEGIN PRIVATE KEY-----
@@ -24,9 +24,9 @@ beforeAll(() => {
     g.btoa = g.btoa ?? ((text: string) => Buffer.from(text, 'binary').toString('base64'));
 });
 
-describe(`OfflineAuthenticator`, () => {
+describe(`TokenSigner`, () => {
     it(`Should sign a token the server can verify`, async () => {
-        const authenticator = new OfflineAuthenticator({name: 'Anna'}, TEST_PEM, 3);
+        const authenticator = new TokenSigner({name: 'Anna'}, TEST_PEM, 3);
         const token = await authenticator.authenticate('c_1', 'presence-room');
         const [header, payload, signature] = token.split('.');
 

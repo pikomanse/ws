@@ -4,14 +4,14 @@ import {INSPECT, inBrowser, refuseInBrowser} from "../redact";
 import {onLocalPage} from "../names";
 
 /** The signing key of each authenticator, out of reach of JSON.stringify and util.inspect. */
-const signingKeys = new WeakMap<OfflineAuthenticator, Promise<CryptoKey>>();
+const signingKeys = new WeakMap<TokenSigner, Promise<CryptoKey>>();
 
 /**
  * Signs join tokens without asking a backend.
  *
  * - In a backend, a bot or a script: with a signing key (`PIKOMAN_PRIVATE_KEY`, and optionally its
  *   id from `PIKOMAN_SIGNING_KEY_ID`), or as a bot with an API key that has `subscribe`
- *   (`OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY)`).
+ *   (`TokenSigner.fromSecret(process.env.PIKOMAN_API_KEY)`).
  * - In a browser, for local experiments only: the private key is in the page, so anyone can read
  *   it. In production, browsers get tokens from the app's backend (HttpAuthenticator). A page not
  *   served from localhost is refused unless it passes `{allowInBrowser: true}`, for a page that
@@ -35,7 +35,7 @@ export async function authChannelWithKey(clientId: string, channelName: string, 
     }, signingKey, keyId);
 }
 
-export default class OfflineAuthenticator implements Authenticator {
+export default class TokenSigner implements Authenticator {
     private readonly data: any;
     private readonly permissions: number;
     private readonly keyId?: string;
@@ -48,7 +48,7 @@ export default class OfflineAuthenticator implements Authenticator {
      */
     constructor(data: any, privateKey: string | CryptoKey | Promise<CryptoKey>, permissions: number, keyId?: string, options: {allowInBrowser?: boolean} = {}) {
         if (inBrowser() && !onLocalPage() && !options.allowInBrowser) {
-            throw new Error("Pikoman: OfflineAuthenticator puts the private key in the page, where anyone can read it. In production your backend signs join tokens (HttpAuthenticator). For a page that only tries things out with a key its visitor types in, pass {allowInBrowser: true}.");
+            throw new Error("Pikoman: TokenSigner puts the private key in the page, where anyone can read it. In production your backend signs join tokens (HttpAuthenticator). For a page that only tries things out with a key its visitor types in, pass {allowInBrowser: true}.");
         }
         this.data = data;
         const signingKey = typeof privateKey === 'string' ? importSigningKey(privateKey) : Promise.resolve(privateKey);
@@ -64,10 +64,10 @@ export default class OfflineAuthenticator implements Authenticator {
      * access 3 (`permissions`) also needs `client_events`. Throws at once if the secret is malformed,
      * and in a browser: an API key in a page is anyone's.
      */
-    static fromSecret(secret: string, data: any = null, permissions = 0): OfflineAuthenticator {
-        refuseInBrowser('OfflineAuthenticator.fromSecret');
+    static fromSecret(secret: string, data: any = null, permissions = 0): TokenSigner {
+        refuseInBrowser('TokenSigner.fromSecret');
         const {keyId, key} = startSecretImport(secret);
-        return new OfflineAuthenticator(data, key, permissions, keyId);
+        return new TokenSigner(data, key, permissions, keyId);
     }
 
     async authenticate(clientId: string, channelName: string, _options = {}): Promise<string> {
@@ -80,6 +80,6 @@ export default class OfflineAuthenticator implements Authenticator {
     }
 
     [INSPECT]() {
-        return `OfflineAuthenticator { keyId: ${JSON.stringify(this.keyId ?? null)}, permissions: ${this.permissions}, signingKey: [hidden] }`;
+        return `TokenSigner { keyId: ${JSON.stringify(this.keyId ?? null)}, permissions: ${this.permissions}, signingKey: [hidden] }`;
     }
 }

@@ -9,7 +9,7 @@ import {
     EncryptedChannel,
     HttpAuthenticator,
     MasterKeyAuthenticator,
-    OfflineAuthenticator,
+    TokenSigner,
     Pikoman,
 } from '../src';
 import {installWebGlobals} from './web_globals';
@@ -274,7 +274,7 @@ describe('Encrypted channels', () => {
 
     it('Should let a program with the master key join without an endpoint', async () => {
         const {pikoman, socket, receive} = connect();
-        const auth = new MasterKeyAuthenticator(OfflineAuthenticator.fromSecret(SECRET, {bot: true}, 3), MASTER);
+        const auth = new MasterKeyAuthenticator(TokenSigner.fromSecret(SECRET, {bot: true}, 3), MASTER);
         const channel = pikoman.listenPrivate(CHANNEL, auth);
         const on = jest.fn();
         channel.on('message', on);

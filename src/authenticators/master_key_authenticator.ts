@@ -12,7 +12,7 @@ const masterKeys = new WeakMap<MasterKeyAuthenticator, Promise<CryptoKey>>();
  *
  * ```js
  * const auth = new MasterKeyAuthenticator(
- *   OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY),
+ *   TokenSigner.fromSecret(process.env.PIKOMAN_API_KEY),
  *   process.env.PIKOMAN_ENCRYPTION_KEY,
  * );
  * pikoman.listenPrivate("private-encrypted-orders", auth);

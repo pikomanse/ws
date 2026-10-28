@@ -83,7 +83,7 @@ works for no other request, and only for a minute. `Rest` signs a new one for ev
 names that start with `client-` are members' client events, and `publish` refuses them, as it
 refuses empty channel and event names and `.` and `..`, which a URL reads as steps in the path. An
 event's data may be at most 12 KiB. Data with no JSON form (a function, a symbol) is
-refused; `undefined` is sent as `null`. `Rest`, `OfflineAuthenticator.fromSecret` and
+refused; `undefined` is sent as `null`. `Rest`, `TokenSigner.fromSecret` and
 `MasterKeyAuthenticator` refuse to run in a browser page: what holds a secret key belongs on a
 server. `Rest` takes only an `https://` address (`http://` only to localhost), so a typo cannot
 send its tokens in the clear; outside a browser the same goes for `ws_address`, which must be
@@ -113,22 +113,22 @@ Your backend signs an EdDSA JWT with one of the app's signing keys, for one conn
 channel, valid for at most 10 minutes. Endpoints for Node and PHP are in the
 [quickstart](https://pikoman.se/docs/#token). The private key never goes in frontend code.
 
-`OfflineAuthenticator` signs them without a token endpoint, in a backend or a bot:
+`TokenSigner` signs them without a token endpoint, in a backend or a bot:
 
 ```js
-import Pikoman, { OfflineAuthenticator } from "@pikoman/ws";
+import Pikoman, { TokenSigner } from "@pikoman/ws";
 
 // With a signing key (PKCS#8, PEM or base64 on one line). The key id is optional and goes in
 // the token's header as `kid`, so the server checks that key only.
-const auth = new OfflineAuthenticator({ name: "Anna" }, process.env.PIKOMAN_PRIVATE_KEY, 3,
+const auth = new TokenSigner({ name: "Anna" }, process.env.PIKOMAN_PRIVATE_KEY, 3,
   process.env.PIKOMAN_SIGNING_KEY_ID);
 
 // As a bot, with an API key that has `subscribe` (access 3 also needs `client_events`).
-const bot = OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY, { name: "Bot" }, 3);
+const bot = TokenSigner.fromSecret(process.env.PIKOMAN_API_KEY, { name: "Bot" }, 3);
 pikoman.listenPresence("presence-room", bot);
 ```
 
-With a signing key, `OfflineAuthenticator` puts the private key wherever it runs. In a browser
+With a signing key, `TokenSigner` puts the private key wherever it runs. In a browser
 page it is refused unless the page is served from localhost, or passes `{ allowInBrowser: true }`
 as the fifth argument: only for a page that tries things out with a key its visitor types in, never
 for a key you ship.
@@ -142,7 +142,7 @@ token endpoint in Express:
 app.post("/pikoman/auth", express.json(), async (req, res) => {
   const { connection_id, channel } = req.body;
   if (!mayJoin(req.user, channel)) return res.sendStatus(403);
-  const signer = new OfflineAuthenticator({ name: req.user.name }, process.env.PIKOMAN_PRIVATE_KEY, 3);
+  const signer = new TokenSigner({ name: req.user.name }, process.env.PIKOMAN_PRIVATE_KEY, 3);
   res.json({ token: await signer.authenticate(connection_id, channel) });
 });
 ```
@@ -297,16 +297,16 @@ res.json({ token, channel_key: await channelKey(process.env.PIKOMAN_ENCRYPTION_K
 A program that holds the master key needs no endpoint:
 
 ```js
-import { MasterKeyAuthenticator, OfflineAuthenticator } from "@pikoman/ws";
+import { MasterKeyAuthenticator, TokenSigner } from "@pikoman/ws";
 
 const auth = new MasterKeyAuthenticator(
-  OfflineAuthenticator.fromSecret(process.env.PIKOMAN_API_KEY),
+  TokenSigner.fromSecret(process.env.PIKOMAN_API_KEY),
   process.env.PIKOMAN_ENCRYPTION_KEY,
 );
 pikoman.listenPrivate("private-encrypted-team-7", auth);
 ```
 
-`Rest`, `MasterKeyAuthenticator` and `OfflineAuthenticator` keep their keys only as
+`Rest`, `MasterKeyAuthenticator` and `TokenSigner` keep their keys only as
 non-extractable Web Crypto keys, and `JSON.stringify` or `console.log` of them shows `[hidden]`
 instead of a key or a token. `importMasterKey(base64)` gives such a key for `channelKey` too.
 
