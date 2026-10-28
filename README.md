@@ -291,7 +291,7 @@ The token endpoint answers such a join with the channel key next to the token, a
 import { channelKey } from "@pikoman/ws";
 
 // In the token endpoint, after deciding the user may join `channel`:
-res.json({ token, channel_key: await channelKey(process.env.PIKOMAN_ENCRYPTION_KEY, channel) });
+res.json({ token, channel_key: await channelKey(process.env.PIKOMAN_ENCRYPTION_KEY, "app-yourapp", channel) });
 ```
 
 A program that holds the master key needs no endpoint:
@@ -317,7 +317,7 @@ reads it back. The direction is `"server"` for what your backend publishes over 
 for client events between members (what `send` sends); the channel uses the right one by itself.
 
 The cipher is AES-256-GCM with a fresh 12-byte nonce per message, the channel key is
-HMAC-SHA256(master key, channel name), and `<direction>\n<channel>\n<event>` is authenticated with
+HMAC-SHA256(master key, `<app id>\n<channel>`), and `<direction>\n<channel>\n<event>` is authenticated with
 every message (an event without a name uses ""). So a message cannot be moved to another channel,
 passed off as another event, or turned from a member's message into one that looks published by
 your backend, or back.

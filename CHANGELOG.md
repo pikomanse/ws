@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0-rc.11 (not published yet)
+## 1.0.0-rc.11 (published 2026-10-28)
 
 **Breaks token endpoints**: `HttpAuthenticator` (what `auth_url` uses) now asks with
 `POST {auth_url}` and the JSON body `{"connection_id": "c_…", "channel": "…"}`, as pusher-js posts
