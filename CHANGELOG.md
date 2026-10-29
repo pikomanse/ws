@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-rc.12 (published 2026-10-29)
 
 **`MasterKeyAuthenticator` is now `EncryptedChannelAuthenticator`**, a name for what it is for: in
 a backend or a bot that holds the app's master key, it adds the channel key to the join token for
