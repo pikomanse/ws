@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0-rc.13 (published 2026-10-29)
+
+Nothing changes in the library. The first version published from GitHub Actions with npm's
+trusted publishing (`.github/workflows/publish.yml`), with provenance: npm shows which commit and
+workflow built it. A prerelease can no longer be published as `latest` by mistake.
+
 ## 1.0.0-rc.12 (published 2026-10-29)
 
 **`MasterKeyAuthenticator` is now `EncryptedChannelAuthenticator`**, a name for what it is for: in
