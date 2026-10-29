@@ -7,7 +7,7 @@
 	"types": "dist/index.d.ts",
 	"repository": {
 		"type": "git",
-		"url": "git+ssh://git@github.com/pikomanse/ws.git"
+		"url": "git+https://github.com/pikomanse/ws.git"
 	},
 	"scripts": {
 		"test": "jest",
