@@ -1,0 +1,31 @@
+# Publishes to npm when a tag vX.Y.Z is pushed: tested and built here, then `npm publish` with npm's
+# trusted publishing (no npm token anywhere; npm trusts this workflow in this repository).
+# A prerelease (1.0.0-rc.13) goes to `next`, a release to `latest`.
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: yarn install --frozen-lockfile
+      - name: The tag is the version in package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag $GITHUB_REF_NAME does not match package.json ($version)"; exit 1
+          fi
+          case "$version" in *-*) echo "NPM_TAG=next" >> "$GITHUB_ENV" ;; *) echo "NPM_TAG=latest" >> "$GITHUB_ENV" ;; esac
+      - run: npm publish --tag "$NPM_TAG"
