@@ -1,6 +1,8 @@
-# Publishes to npm when a tag vX.Y.Z is pushed: tested and built here, then `npm publish` with npm's
-# trusted publishing (no npm token anywhere; npm trusts this workflow in this repository).
-# A prerelease (1.0.0-rc.13) goes to `next`, a release to `latest`.
+# Stages a version on npm when a tag vX.Y.Z is pushed: tested and built here, then `npm stage
+# publish` with npm's trusted publishing (no npm token anywhere; npm trusts this workflow in this
+# repository). Nothing is public until the owner approves the staged version on npmjs.com: the
+# trusted publisher may only stage, not publish. A prerelease (1.0.0-rc.13) goes to `next`, a
+# release to `latest`.
 name: Publish to npm
 
 on:
@@ -28,4 +30,9 @@ jobs:
             echo "The tag $GITHUB_REF_NAME does not match package.json ($version)"; exit 1
           fi
           case "$version" in *-*) echo "NPM_TAG=next" >> "$GITHUB_ENV" ;; *) echo "NPM_TAG=latest" >> "$GITHUB_ENV" ;; esac
-      - run: npm publish --tag "$NPM_TAG"
+      - run: node scripts/check-tag.js && npm test && npm run build
+        env:
+          npm_config_tag: ${{ env.NPM_TAG }}
+      # `npm stage` came with npm 12.
+      - run: npm install -g npm@12
+      - run: npm stage publish . --tag "$NPM_TAG" --ignore-scripts
