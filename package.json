@@ -13,7 +13,7 @@
 		"test": "jest",
 		"clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
 		"build": "npm run clean && tsc && webpack",
-		"prepublishOnly": "npm test && npm run build"
+		"prepublishOnly": "node scripts/check-tag.js && npm test && npm run build"
 	},
 	"publishConfig": {
 		"tag": "next"
