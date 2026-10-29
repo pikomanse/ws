@@ -535,7 +535,7 @@ export class PresenceChannel extends PrivateChannel {
  * reported through `refused("decrypt_failed")`.
  *
  * The channel key comes from the authenticator: the token endpoint answers it as `channel_key`
- * (HttpAuthenticator), or a program with the master key derives it (MasterKeyAuthenticator).
+ * (HttpAuthenticator), or a program with the master key derives it (EncryptedChannelAuthenticator).
  */
 export class EncryptedChannel extends PrivateChannel {
 	private key?: Promise<CryptoKey>;

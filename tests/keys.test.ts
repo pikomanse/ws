@@ -3,7 +3,7 @@
  */
 import {createHash, createPrivateKey, createPublicKey, webcrypto} from 'crypto';
 import {
-    MasterKeyAuthenticator,
+    EncryptedChannelAuthenticator,
     TokenSigner,
     importSecret,
     parseSecret,
@@ -373,7 +373,7 @@ describe('Rest', () => {
         try {
             expect(() => new Rest({app: 'app-test', apiKey: SECRET})).toThrow(/never in a browser/);
             expect(() => TokenSigner.fromSecret(SECRET)).toThrow(/never in a browser/);
-            expect(() => new MasterKeyAuthenticator({authenticate: async () => 't'}, Buffer.alloc(32).toString('base64'))).toThrow(/never in a browser/);
+            expect(() => new EncryptedChannelAuthenticator({authenticate: async () => 't'}, Buffer.alloc(32).toString('base64'))).toThrow(/never in a browser/);
             // A signing key puts the key in the page: refused, unless the page says it means it
             // (a playground where the visitor types in a key) or is served from localhost.
             expect(() => new TokenSigner(null, PKCS8_BASE64, 0)).toThrow(/allowInBrowser/);

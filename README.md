@@ -84,7 +84,7 @@ names that start with `client-` are members' client events, and `publish` refuse
 refuses empty channel and event names and `.` and `..`, which a URL reads as steps in the path. An
 event's data may be at most 12 KiB. Data with no JSON form (a function, a symbol) is
 refused; `undefined` is sent as `null`. `Rest`, `TokenSigner.fromSecret` and
-`MasterKeyAuthenticator` refuse to run in a browser page: what holds a secret key belongs on a
+`EncryptedChannelAuthenticator` refuse to run in a browser page: what holds a secret key belongs on a
 server. `Rest` takes only an `https://` address (`http://` only to localhost), so a typo cannot
 send its tokens in the clear; outside a browser the same goes for `ws_address`, which must be
 `wss://` (`ws://` only to localhost). For other requests (stats, clients, disconnect), make the
@@ -297,16 +297,16 @@ res.json({ token, channel_key: await channelKey(process.env.PIKOMAN_ENCRYPTION_K
 A program that holds the master key needs no endpoint:
 
 ```js
-import { MasterKeyAuthenticator, TokenSigner } from "@pikoman/ws";
+import { EncryptedChannelAuthenticator, TokenSigner } from "@pikoman/ws";
 
-const auth = new MasterKeyAuthenticator(
+const auth = new EncryptedChannelAuthenticator(
   TokenSigner.fromSecret(process.env.PIKOMAN_API_KEY),
   process.env.PIKOMAN_ENCRYPTION_KEY,
 );
 pikoman.listenPrivate("private-encrypted-team-7", auth);
 ```
 
-`Rest`, `MasterKeyAuthenticator` and `TokenSigner` keep their keys only as
+`Rest`, `EncryptedChannelAuthenticator` and `TokenSigner` keep their keys only as
 non-extractable Web Crypto keys, and `JSON.stringify` or `console.log` of them shows `[hidden]`
 instead of a key or a token. `importMasterKey(base64)` gives such a key for `channelKey` too.
 

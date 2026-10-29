@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**`MasterKeyAuthenticator` is now `EncryptedChannelAuthenticator`**, a name for what it is for: in
+a backend or a bot that holds the app's master key, it adds the channel key to the join token for
+`private-encrypted-` channels, so no token endpoint is needed. `MasterKeyAuthenticator` stays as
+another name for the same class, so code written for rc.11 keeps working.
+
 ## 1.0.0-rc.11 (published 2026-10-28)
 
 **Breaks token endpoints**: `HttpAuthenticator` (what `auth_url` uses) now asks with

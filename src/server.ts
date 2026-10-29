@@ -28,4 +28,4 @@ export {
 } from './encryption';
 export type {EncryptedData, ChannelKey, MasterKey, Direction} from './encryption';
 export {TokenSigner, OfflineAuthenticator} from './authenticators';
-export {default as MasterKeyAuthenticator} from './authenticators/master_key_authenticator';
+export {EncryptedChannelAuthenticator, MasterKeyAuthenticator} from './authenticators';

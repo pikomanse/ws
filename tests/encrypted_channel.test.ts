@@ -8,7 +8,7 @@ import {
     encryptEvent,
     EncryptedChannel,
     HttpAuthenticator,
-    MasterKeyAuthenticator,
+    EncryptedChannelAuthenticator,
     TokenSigner,
     Pikoman,
 } from '../src';
@@ -274,7 +274,7 @@ describe('Encrypted channels', () => {
 
     it('Should let a program with the master key join without an endpoint', async () => {
         const {pikoman, socket, receive} = connect();
-        const auth = new MasterKeyAuthenticator(TokenSigner.fromSecret(SECRET, {bot: true}, 3), MASTER);
+        const auth = new EncryptedChannelAuthenticator(TokenSigner.fromSecret(SECRET, {bot: true}, 3), MASTER);
         const channel = pikoman.listenPrivate(CHANNEL, auth);
         const on = jest.fn();
         channel.on('message', on);

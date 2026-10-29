@@ -17,7 +17,7 @@ import {
     KickOptions,
     KickInfo,
 } from './types';
-import {TokenSigner, OfflineAuthenticator, HttpAuthenticator, MasterKeyAuthenticator} from './authenticators';
+import {TokenSigner, OfflineAuthenticator, HttpAuthenticator, EncryptedChannelAuthenticator, MasterKeyAuthenticator} from './authenticators';
 import {
     importSigningKey,
     importSeed,
@@ -60,6 +60,7 @@ export {
     HttpAuthenticator,
     TokenSigner,
     OfflineAuthenticator,
+    EncryptedChannelAuthenticator,
     MasterKeyAuthenticator,
     importSigningKey,
     importSeed,

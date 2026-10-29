@@ -3,7 +3,7 @@ import {channelKey, isEncryptedChannel, MasterKey, startMasterKeyImport} from ".
 import {INSPECT, refuseInBrowser} from "../redact";
 
 /** The master key of each authenticator, out of reach of JSON.stringify and util.inspect. */
-const masterKeys = new WeakMap<MasterKeyAuthenticator, Promise<CryptoKey>>();
+const masterKeys = new WeakMap<EncryptedChannelAuthenticator, Promise<CryptoKey>>();
 
 /**
  * For a program that holds the app's master key (a backend, or a bot with an API key): gets the
@@ -11,7 +11,7 @@ const masterKeys = new WeakMap<MasterKeyAuthenticator, Promise<CryptoKey>>();
  * is needed for `private-encrypted-` channels.
  *
  * ```js
- * const auth = new MasterKeyAuthenticator(
+ * const auth = new EncryptedChannelAuthenticator(
  *   TokenSigner.fromSecret(process.env.PIKOMAN_API_KEY),
  *   process.env.PIKOMAN_ENCRYPTION_KEY,
  * );
@@ -20,12 +20,12 @@ const masterKeys = new WeakMap<MasterKeyAuthenticator, Promise<CryptoKey>>();
  *
  * The master key is kept only as a non-extractable HMAC CryptoKey, never as bytes.
  */
-export default class MasterKeyAuthenticator implements Authenticator {
+export default class EncryptedChannelAuthenticator implements Authenticator {
     private readonly inner: Authenticator;
 
     /** `masterKey`: the app's 32-byte master key, base64 or bytes, or the CryptoKey from `importMasterKey`. */
     constructor(inner: Authenticator, masterKey: MasterKey) {
-        refuseInBrowser('MasterKeyAuthenticator');
+        refuseInBrowser('EncryptedChannelAuthenticator');
         this.inner = inner;
         const key = startMasterKeyImport(masterKey);
         key.catch(() => undefined);
@@ -39,7 +39,7 @@ export default class MasterKeyAuthenticator implements Authenticator {
             return token;
         }
         if (!options.app) {
-            throw new Error('Pikoman: MasterKeyAuthenticator needs the app id, which Pikoman passes in the options');
+            throw new Error('Pikoman: EncryptedChannelAuthenticator needs the app id, which Pikoman passes in the options');
         }
         return {token, channel_key: await channelKey(await (masterKeys.get(this) as Promise<CryptoKey>), options.app, channelName)};
     }
@@ -49,6 +49,6 @@ export default class MasterKeyAuthenticator implements Authenticator {
     }
 
     [INSPECT]() {
-        return 'MasterKeyAuthenticator { masterKey: [hidden] }';
+        return 'EncryptedChannelAuthenticator { masterKey: [hidden] }';
     }
 }
